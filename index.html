@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LA MAFIA — Barbería</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base: '#0b0c10',
+          card: '#14161a',
+          card2: '#1a1d22',
+          edge: '#22252a',
+          accent: '#ff6a00',
+          accent2: '#ff9143',
+          ember: '#ff3d00',
+          muted: '#8b8f97',
+          okgreen: '#3ecf7a',
+        },
+        fontFamily: {
+          display: ['"Bebas Neue"', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  html, body { background:#08090b; }
+  body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+  .font-display { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.02em; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* signature: subtle barber-pole diagonal stripe, recolored to brand palette */
+  .pole-stripe {
+    background-image: repeating-linear-gradient(
+      45deg,
+      #ff6a00 0px, #ff6a00 10px,
+      #14161a 10px, #14161a 22px,
+      #2a2d33 22px, #2a2d33 32px
+    );
+  }
+
+  .glow-btn {
+    box-shadow: 0 0 0 1px rgba(255,106,0,0.35), 0 8px 24px -6px rgba(255,106,0,0.55);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .glow-btn:active { transform: scale(0.97); }
+  .glow-btn:hover { box-shadow: 0 0 0 1px rgba(255,106,0,0.5), 0 10px 30px -4px rgba(255,106,0,0.75); }
+
+  .card-edge { border: 1px solid #22252a; }
+
+  .fade-in { animation: fadeIn .28s ease both; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+
+  .spinner {
+    width: 40px; height: 40px; border-radius: 999px;
+    border: 3px solid rgba(255,106,0,0.2);
+    border-top-color: #ff6a00;
+    animation: spin .75s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .punch-dot { width: 16px; height: 16px; border-radius: 999px; border: 2px solid #ff6a00; }
+  .punch-dot.filled { background: #ff6a00; box-shadow: 0 0 8px rgba(255,106,0,0.7); }
+  .punch-dot.empty { background: transparent; opacity: .45; }
+
+  .ticket-notch {
+    position: relative;
+  }
+  .ticket-notch::before, .ticket-notch::after {
+    content: "";
+    position: absolute;
+    top: 50%; transform: translateY(-50%);
+    width: 16px; height: 16px;
+    background: #0b0c10;
+    border-radius: 999px;
+  }
+  .ticket-notch::before { left: -9px; }
+  .ticket-notch::after { right: -9px; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #2a2d33; border-radius: 4px; }
+
+  input[type="text"], input[type="tel"] {
+    background: #0e1013; border: 1px solid #22252a; color: #fff;
+  }
+  input[type="text"]:focus, input[type="tel"]:focus {
+    outline: none; border-color: #ff6a00; box-shadow: 0 0 0 3px rgba(255,106,0,0.15);
+  }
+  input::placeholder { color: #5c6068; }
+
+  button:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid #ff9143; outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .spinner { animation: none !important; }
+  }
+</style>
+</head>
+<body class="bg-[#08090b]">
+
+<div class="min-h-screen w-full flex justify-center">
+  <div class="w-full max-w-md min-h-screen bg-base relative pb-24 shadow-[0_0_60px_rgba(0,0,0,0.6)] border-x border-[#16181d]">
+
+    <!-- Top signature stripe -->
+    <div class="h-[3px] w-full pole-stripe"></div>
+
+    <div id="view-container" class="fade-in"></div>
+
+  </div>
+</div>
+
+<!-- Floating dev switcher (demo navigation between the 3 core views) -->
+<div class="fixed bottom-0 left-0 right-0 flex justify-center z-50 pointer-events-none">
+  <div class="w-full max-w-md pointer-events-auto">
+    <div class="mx-3 mb-3 rounded-2xl bg-card2/95 backdrop-blur card-edge shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex overflow-hidden">
+      <button data-action="switch-main" data-view="client" class="dev-tab flex-1 flex flex-col items-center gap-1 py-3 text-[11px] font-bold uppercase tracking-wide transition-colors">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5Z"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+        Cliente
+      </button>
+      <div class="w-px bg-edge my-2"></div>
+      <button data-action="switch-main" data-view="barber" class="dev-tab flex-1 flex flex-col items-center gap-1 py-3 text-[11px] font-bold uppercase tracking-wide transition-colors">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 10-10"/><path d="M6 15 3 18l3 3 3-3"/><circle cx="6" cy="6" r="2.2"/></svg>
+        Barbero
+      </button>
+      <div class="w-px bg-edge my-2"></div>
+      <button data-action="switch-main" data-view="manager" class="dev-tab flex-1 flex flex-col items-center gap-1 py-3 text-[11px] font-bold uppercase tracking-wide transition-colors">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg>
+        Gerencia
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   LA MAFIA — Lazy Landing demo
+   Estado persistido en localStorage para intercomunicar las
+   vistas de Cliente, Barbero y Gerencia en tiempo real.
+   ============================================================ */
+
+const STORAGE_KEY = 'lamafia_db_v1';
+
+const SERVICES = [
+  { id: 'trad',  name: 'Corte Tradicional', price: 25000, mins: 30 },
+  { id: 'fade',  name: 'Fade Premium',      price: 35000, mins: 45 },
+  { id: 'combo', name: 'Corte + Barba',     price: 45000, mins: 50 },
+  { id: 'barba', name: 'Diseño de Barba',   price: 20000, mins: 25 },
+  { id: 'cejas', name: 'Perfilado de Cejas',price: 10000, mins: 15 },
+];
+
+const PLANS = {
+  BASE: { label: 'Base', price: 89000,  cortes: 2, extras: 0, color: '#8b8f97' },
+  PRO:  { label: 'Pro',  price: 129000, cortes: 3, extras: 2, color: '#ff9143' },
+  VIP:  { label: 'VIP',  price: 169000, cortes: 4, extras: 4, color: '#ff6a00' },
+};
+
+const TIME_SLOTS = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM'];
+
+function defaultDB() {
+  return {
+    barbers: [
+      { id: 'carlos', name: 'Carlos B.', role: 'Barbero Senior', restDay: false, commissionPerCut: 12000 },
+      { id: 'mateo',  name: 'Mateo R.',  role: 'Especialista en Fade', restDay: false, commissionPerCut: 12000 },
+      { id: 'andres', name: 'Andrés G.', role: 'Barbero Junior', restDay: false, commissionPerCut: 9000 },
+    ],
+    members: [
+      { id: 'juan',    name: 'Juan Pérez',   phone: '300 111 2233', plan: 'VIP', cortesUsados: 1, extrasUsados: 2 },
+      { id: 'andrea',  name: 'Andrea Gómez', phone: '311 222 3344', plan: 'PRO', cortesUsados: 3, extrasUsados: 1 },
+      { id: 'felipe',  name: 'Felipe Ruiz',  phone: '320 333 4455', plan: 'BASE', cortesUsados: 0, extrasUsados: 0 },
+    ],
+    appointments: [],
+    nextApptId: 1,
+  };
+}
+
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) { const db = defaultDB(); saveDB(db); return db; }
+    return JSON.parse(raw);
+  } catch (e) {
+    const db = defaultDB(); saveDB(db); return db;
+  }
+}
+
+function saveDB(db) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+let DB = loadDB();
+
+// keep other "tabs"/views synced live if storage changes externally
+window.addEventListener('storage', () => { DB = loadDB(); render(); });
+
+// in-memory UI/session state (navigation + in-progress form selections)
+let UI = {
+  main: 'client',            // 'client' | 'barber' | 'manager'
+  clientMode: 'home',        // 'home' | 'new' | 'member'
+  newStep: 1,
+  newSel: { service: null, barberId: null, date: null, time: null, name: '', phone: '' },
+  memberId: null,
+  memberStep: 1,
+  memberSel: { barberId: null, date: null, time: null },
+  confirming: false,
+  lastConfirmedCode: null,
+  selectedBarberId: 'carlos',
+};
+
+function money(n) {
+  return '$' + n.toLocaleString('es-CO');
+}
+
+function nextDates(n) {
+  const days = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const out = [];
+  const today = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    out.push({
+      iso: d.toISOString().slice(0,10),
+      label: (i === 0 ? 'Hoy' : days[d.getDay()]),
+      day: d.getDate(),
+      month: d.toLocaleDateString('es-CO', { month: 'short' }).replace('.',''),
+    });
+  }
+  return out;
+}
+
+function svgIcon(name, cls) {
+  const icons = {
+    scissors: '<path d="M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/><path d="M20 4 8.5 15.5"/><path d="M14.5 9.5 20 15"/><path d="M8.5 8.5 5 5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+    star: '<path d="m12 2 3.1 6.6 7.2.9-5.3 5 1.4 7.2L12 18.3 5.6 21.7 7 14.5 1.7 9.5l7.2-.9L12 2Z"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
+    coffee: '<path d="M4 21h16"/><path d="M6 3h11v9a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V6a3 3 0 0 1 2-2Z"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    users: '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M21.5 20c0-2.7-1.7-5-4-6"/>',
+  };
+  return `<svg class="${cls||''}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icons[name]||''}</svg>`;
+}
+
+/* ============================ RENDER ROUTER ============================ */
+
+function render() {
+  const root = document.getElementById('view-container');
+  let html = '';
+  if (UI.main === 'client') {
+    if (UI.clientMode === 'home') html = renderClientHome();
+    else if (UI.clientMode === 'new') html = renderNewClientFlow();
+    else if (UI.clientMode === 'member') html = renderMemberFlow();
+  } else if (UI.main === 'barber') {
+    html = renderBarberDashboard();
+  } else if (UI.main === 'manager') {
+    html = renderManagerPanel();
+  }
+  root.innerHTML = html;
+  root.classList.remove('fade-in'); void root.offsetWidth; root.classList.add('fade-in');
+  syncTabStyles();
+}
+
+function syncTabStyles() {
+  document.querySelectorAll('.dev-tab').forEach(btn => {
+    const active = btn.dataset.view === UI.main;
+    btn.classList.toggle('text-accent', active);
+    btn.classList.toggle('text-muted', !active);
+  });
+}
+
+/* ============================ VIEW: CLIENT HOME ============================ */
+
+function renderClientHome() {
+  return `
+  <div class="px-5 pt-6">
+    <div class="flex items-center justify-between">
+      <div class="font-display text-4xl text-white leading-none">LA <span class="text-accent">MAFIA</span></div>
+      <div class="w-9 h-9 rounded-full bg-card2 card-edge flex items-center justify-center text-accent">${svgIcon('scissors')}</div>
+    </div>
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">Barbería · Pereira</div>
+
+    <div class="mt-6 rounded-2xl overflow-hidden card-edge relative">
+      <div class="pole-stripe h-1.5 w-full"></div>
+      <div class="bg-card px-5 py-6">
+        <div class="font-display text-3xl leading-[0.95] text-white">CORTE CON <span class="text-accent">ACTITUD.</span></div>
+        <p class="text-sm text-muted mt-2 leading-relaxed">Agenda tu cita en menos de un minuto. Sin grupos de WhatsApp, sin esperas.</p>
+      </div>
+    </div>
+
+    <div class="mt-8 text-[11px] uppercase tracking-[0.2em] text-muted">¿Cómo quieres entrar?</div>
+
+    <div class="mt-3 grid grid-cols-1 gap-3">
+      <button data-action="go-new-client" class="glow-btn bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4 flex items-center justify-center gap-2">
+        ${svgIcon('user')} SOY CLIENTE NUEVO
+      </button>
+      <button data-action="go-member" class="bg-card2 card-edge text-white font-display text-xl tracking-wide rounded-xl py-4 flex items-center justify-center gap-2 hover:border-accent/60 transition-colors">
+        ${svgIcon('star')} TENGO UNA MEMBRESÍA
+      </button>
+    </div>
+
+    <div class="mt-8">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">Planes mensuales</div>
+      <div class="grid grid-cols-3 gap-2">
+        ${Object.entries(PLANS).map(([key, p]) => `
+          <div class="rounded-xl card-edge bg-card2 px-2 py-3 text-center">
+            <div class="font-display text-lg" style="color:${p.color}">${p.label.toUpperCase()}</div>
+            <div class="font-mono text-[11px] text-muted mt-1">${money(p.price)}</div>
+            <div class="text-[10px] text-muted mt-1">${p.cortes} cortes/mes</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="mt-6 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
+      ${svgIcon('clock', 'shrink-0 mt-0.5 text-accent')}
+      <span>Vista de demostración — usa la barra inferior para ver el panel del barbero y de gerencia.</span>
+    </div>
+  </div>`;
+}
+
+/* ============================ FLOW: NEW CLIENT ============================ */
+
+function renderNewClientFlow() {
+  if (UI.confirming) return renderSpinner('Confirmando tu cita...');
+  if (UI.lastConfirmedCode) return renderNewClientSuccess();
+
+  const step = UI.newStep;
+  return `
+  <div class="px-5 pt-6">
+    ${flowHeader('CLIENTE NUEVO', () => {}, 'go-client-home')}
+    ${stepDots(step, 4)}
+
+    ${step === 1 ? stepPickService() : ''}
+    ${step === 2 ? stepPickBarber('newSel') : ''}
+    ${step === 3 ? stepPickDateTime('newSel') : ''}
+    ${step === 4 ? stepBasicData() : ''}
+  </div>`;
+}
+
+function flowHeader(title, onBack, backAction) {
+  return `
+  <div class="flex items-center gap-3 mb-1">
+    <button data-action="${backAction}" class="w-9 h-9 rounded-full bg-card2 card-edge flex items-center justify-center text-white">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="font-display text-2xl tracking-wide text-white">${title}</div>
+  </div>`;
+}
+
+function stepDots(current, total) {
+  let dots = '';
+  for (let i = 1; i <= total; i++) {
+    dots += `<div class="h-1.5 flex-1 rounded-full ${i <= current ? 'bg-accent' : 'bg-edge'}"></div>`;
+  }
+  return `<div class="flex gap-1.5 mt-4 mb-6">${dots}</div>`;
+}
+
+function stepPickService() {
+  return `
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">1. Elige tu servicio</div>
+  <div class="grid grid-cols-1 gap-2.5">
+    ${SERVICES.map(s => `
+      <button data-action="pick-service" data-id="${s.id}" class="w-full text-left bg-card card-edge hover:border-accent/60 rounded-xl px-4 py-3.5 flex items-center justify-between transition-colors ${UI.newSel.service===s.id ? 'border-accent' : ''}">
+        <div>
+          <div class="font-semibold text-white text-sm">${s.name}</div>
+          <div class="text-[11px] text-muted mt-0.5">${s.mins} min</div>
+        </div>
+        <div class="font-mono text-accent font-bold">${money(s.price)}</div>
+      </button>
+    `).join('')}
+  </div>`;
+}
+
+function stepPickBarber(selKey) {
+  return `
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${selKey==='newSel'?'2':'1'}. Elige tu barbero</div>
+  <div class="grid grid-cols-1 gap-2.5">
+    ${DB.barbers.map(b => `
+      <button data-action="pick-barber" data-sel="${selKey}" data-id="${b.id}" ${b.restDay ? 'disabled' : ''}
+        class="w-full text-left bg-card card-edge rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors ${b.restDay ? 'opacity-40 cursor-not-allowed' : 'hover:border-accent/60'} ${UI[selKey].barberId===b.id ? 'border-accent' : ''}">
+        <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent font-display text-lg">${b.name.charAt(0)}</div>
+        <div class="flex-1">
+          <div class="font-semibold text-white text-sm">${b.name}</div>
+          <div class="text-[11px] text-muted mt-0.5">${b.role}</div>
+        </div>
+        ${b.restDay ? '<div class="text-[10px] uppercase font-bold text-muted bg-edge rounded px-2 py-1">Descanso</div>' : ''}
+      </button>
+    `).join('')}
+  </div>`;
+}
+
+function stepPickDateTime(selKey) {
+  const dates = nextDates(6);
+  const sel = UI[selKey];
+  return `
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${selKey==='newSel'?'3':'2'}. Fecha y hora</div>
+  <div class="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+    ${dates.map(d => `
+      <button data-action="pick-date" data-sel="${selKey}" data-date="${d.iso}" class="shrink-0 w-16 rounded-xl card-edge py-2.5 text-center transition-colors ${sel.date===d.iso ? 'bg-accent text-black border-accent' : 'bg-card text-white hover:border-accent/60'}">
+        <div class="text-[10px] uppercase tracking-wide ${sel.date===d.iso?'text-black/70':'text-muted'}">${d.label}</div>
+        <div class="font-display text-xl leading-tight">${d.day}</div>
+        <div class="text-[9px] uppercase ${sel.date===d.iso?'text-black/70':'text-muted'}">${d.month}</div>
+      </button>
+    `).join('')}
+  </div>
+
+  <div class="grid grid-cols-3 gap-2 mt-5">
+    ${TIME_SLOTS.map(t => `
+      <button data-action="pick-time" data-sel="${selKey}" data-time="${t}" class="rounded-lg card-edge py-2.5 text-xs font-semibold transition-colors ${sel.time===t ? 'bg-accent text-black border-accent' : 'bg-card text-white hover:border-accent/60'}">
+        ${t}
+      </button>
+    `).join('')}
+  </div>
+
+  ${sel.date && sel.time ? `
+    <button data-action="${selKey==='newSel' ? 'to-step-4' : 'member-confirm'}" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
+      ${selKey==='newSel' ? 'CONTINUAR' : 'CONFIRMAR CITA'}
+    </button>
+  ` : ''}
+  `;
+}
+
+function stepBasicData() {
+  return `
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">4. Tus datos</div>
+  <div class="space-y-3">
+    <div>
+      <label class="text-[11px] text-muted">Nombre completo</label>
+      <input id="input-name" type="text" placeholder="Ej: Andrés Torres" value="${UI.newSel.name}" class="w-full rounded-lg px-3.5 py-3 mt-1 text-sm" />
+    </div>
+    <div>
+      <label class="text-[11px] text-muted">Celular</label>
+      <input id="input-phone" type="tel" placeholder="300 000 0000" value="${UI.newSel.phone}" class="w-full rounded-lg px-3.5 py-3 mt-1 text-sm" />
+    </div>
+  </div>
+
+  <div class="mt-5 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Resumen</div>
+    ${summaryRow('Servicio', SERVICES.find(s=>s.id===UI.newSel.service)?.name || '—')}
+    ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.newSel.barberId)?.name || '—')}
+    ${summaryRow('Fecha', formatDateLabel(UI.newSel.date) + ' · ' + UI.newSel.time)}
+    ${summaryRow('Total', money(SERVICES.find(s=>s.id===UI.newSel.service)?.price || 0), true)}
+  </div>
+
+  <button data-action="confirm-new-client" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
+    CONFIRMAR CITA
+  </button>
+  `;
+}
+
+function summaryRow(label, value, strong) {
+  return `<div class="flex items-center justify-between py-1">
+    <div class="text-xs text-muted">${label}</div>
+    <div class="text-xs ${strong ? 'font-mono font-bold text-accent' : 'text-white font-medium'}">${value}</div>
+  </div>`;
+}
+
+function formatDateLabel(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function renderSpinner(msg) {
+  return `
+  <div class="px-5 pt-24 flex flex-col items-center justify-center text-center">
+    <div class="spinner"></div>
+    <div class="text-sm text-muted mt-5">${msg}</div>
+  </div>`;
+}
+
+function renderNewClientSuccess() {
+  return `
+  <div class="px-5 pt-16 flex flex-col items-center text-center">
+    <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent">
+      ${svgIcon('check')}
+    </div>
+    <div class="font-display text-3xl text-white mt-5">¡CITA CONFIRMADA!</div>
+    <div class="text-sm text-muted mt-2">Código de confirmación</div>
+    <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
+
+    <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
+      ${summaryRow('Servicio', SERVICES.find(s=>s.id===UI.newSel.service)?.name || '—')}
+      ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.newSel.barberId)?.name || '—')}
+      ${summaryRow('Fecha', formatDateLabel(UI.newSel.date) + ' · ' + UI.newSel.time)}
+    </div>
+
+    <div class="w-full mt-5 rounded-xl border border-accent/40 bg-accent/10 px-4 py-4 text-left">
+      <div class="flex items-center gap-2 text-accent font-display text-lg">${svgIcon('star')} AHORRA EN TU PRÓXIMO CORTE</div>
+      <p class="text-xs text-muted mt-1.5 leading-relaxed">Con el Plan Pro pagas ${money(PLANS.PRO.price)}/mes y tu corte sale a ${money(Math.round(PLANS.PRO.price/PLANS.PRO.cortes))} en vez de ${money(SERVICES.find(s=>s.id===UI.newSel.service)?.price||25000)}.</p>
+      <button data-action="go-client-home" class="mt-3 w-full bg-accent text-black font-bold text-xs uppercase tracking-wide rounded-lg py-2.5">Ver planes</button>
+    </div>
+
+    <button data-action="go-client-home" class="mt-6 text-xs text-muted underline underline-offset-4">Volver al inicio</button>
+  </div>`;
+}
+
+/* ============================ FLOW: MEMBER ============================ */
+
+function renderMemberFlow() {
+  if (UI.confirming) return renderSpinner('Confirmando tu cita...');
+  if (UI.lastConfirmedCode) return renderMemberSuccess();
+
+  if (!UI.memberId) return renderMemberPicker();
+
+  const member = DB.members.find(m => m.id === UI.memberId);
+  const step = UI.memberStep;
+
+  return `
+  <div class="px-5 pt-6">
+    ${flowHeader('MI MEMBRESÍA', () => {}, 'go-client-home')}
+    ${memberBalanceCard(member)}
+    ${stepDots(step, 2)}
+    ${step === 1 ? stepPickBarber('memberSel') : ''}
+    ${step === 2 ? stepPickDateTime('memberSel') : ''}
+  </div>`;
+}
+
+function renderMemberPicker() {
+  return `
+  <div class="px-5 pt-6">
+    ${flowHeader('INGRESAR COMO MIEMBRO', () => {}, 'go-client-home')}
+    <p class="text-xs text-muted mb-4">Simulación de inicio de sesión — elige un perfil para continuar.</p>
+    <div class="grid grid-cols-1 gap-2.5">
+      ${DB.members.map(m => `
+        <button data-action="pick-member" data-id="${m.id}" class="w-full text-left bg-card card-edge hover:border-accent/60 rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors">
+          <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center font-display text-lg" style="color:${PLANS[m.plan].color}">${m.name.charAt(0)}</div>
+          <div class="flex-1">
+            <div class="font-semibold text-white text-sm">${m.name}</div>
+            <div class="text-[11px] text-muted mt-0.5">Plan ${PLANS[m.plan].label}</div>
+          </div>
+          ${svgIcon('star', 'text-accent')}
+        </button>
+      `).join('')}
+    </div>
+  </div>`;
+}
+
+function memberBalanceCard(member) {
+  const plan = PLANS[member.plan];
+  const cortesLeft = plan.cortes - member.cortesUsados;
+  const extrasLeft = plan.extras - member.extrasUsados;
+  return `
+  <div class="rounded-2xl bg-card card-edge overflow-hidden mb-6">
+    <div class="px-4 pt-4 pb-3 flex items-center justify-between">
+      <div>
+        <div class="text-[11px] text-muted">¡Bienvenido de nuevo!</div>
+        <div class="font-display text-xl text-white leading-tight">${member.name.toUpperCase()}</div>
+      </div>
+      <div class="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style="color:${plan.color}; border:1px solid ${plan.color}">Plan ${plan.label}</div>
+    </div>
+    <div class="ticket-notch border-t border-dashed border-edge mx-4"></div>
+    <div class="px-5 py-4">
+      <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Cortes este mes — ${cortesLeft}/${plan.cortes} disponibles</div>
+      <div class="flex gap-2 mb-4">
+        ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < member.cortesUsados ? 'filled' : 'empty'}"></div>`).join('')}
+      </div>
+      ${plan.extras > 0 ? `
+        <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Extras (barba/cejas) — ${extrasLeft}/${plan.extras} disponibles</div>
+        <div class="flex gap-2">
+          ${Array.from({length: plan.extras}).map((_,i) => `<div class="punch-dot ${i < member.extrasUsados ? 'filled' : 'empty'}" style="width:12px;height:12px;"></div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  </div>`;
+}
+
+function renderMemberSuccess() {
+  const member = DB.members.find(m => m.id === UI.memberId);
+  const plan = PLANS[member.plan];
+  const cortesLeft = plan.cortes - member.cortesUsados;
+  return `
+  <div class="px-5 pt-16 flex flex-col items-center text-center">
+    <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent">
+      ${svgIcon('check')}
+    </div>
+    <div class="font-display text-3xl text-white mt-5">¡CITA CONFIRMADA!</div>
+    <div class="text-sm text-muted mt-2">Código de confirmación</div>
+    <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
+
+    <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
+      ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.memberSel.barberId)?.name || '—')}
+      ${summaryRow('Fecha', formatDateLabel(UI.memberSel.date) + ' · ' + UI.memberSel.time)}
+      ${summaryRow('Créditos restantes', cortesLeft + '/' + plan.cortes, true)}
+    </div>
+
+    <div class="w-full mt-5 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2 text-left">
+      ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
+      <span>Se descontó 1 crédito de tu Plan ${plan.label} automáticamente.</span>
+    </div>
+
+    <button data-action="go-client-home" class="mt-6 text-xs text-muted underline underline-offset-4">Volver al inicio</button>
+  </div>`;
+}
+
+/* ============================ VIEW: BARBER DASHBOARD ============================ */
+
+function renderBarberDashboard() {
+  const barber = DB.barbers.find(b => b.id === UI.selectedBarberId) || DB.barbers[0];
+  const todayIso = nextDates(1)[0].iso;
+  const appts = DB.appointments
+    .filter(a => a.barberId === barber.id && a.date === todayIso)
+    .sort((a,b) => TIME_SLOTS.indexOf(a.time) - TIME_SLOTS.indexOf(b.time));
+
+  const cortesMes = DB.appointments.filter(a => a.barberId === barber.id).length;
+  const comisiones = cortesMes * barber.commissionPerCut;
+
+  return `
+  <div class="px-5 pt-6">
+    <div class="flex items-center justify-between">
+      <div class="font-display text-3xl text-white leading-none">PANEL <span class="text-accent">BARBERO</span></div>
+    </div>
+
+    <div class="mt-4 flex gap-2 overflow-x-auto pb-1">
+      ${DB.barbers.map(b => `
+        <button data-action="select-barber" data-id="${b.id}" class="shrink-0 rounded-full px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${UI.selectedBarberId===b.id ? 'bg-accent text-black' : 'bg-card2 card-edge text-muted'}">
+          ${b.name}
+        </button>
+      `).join('')}
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mt-5">
+      <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+        <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('scissors','w-3.5 h-3.5')} Cortes del mes</div>
+        <div class="font-mono text-2xl font-bold text-white mt-1">${cortesMes}</div>
+      </div>
+      <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+        <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('trend','w-3.5 h-3.5')} Comisión estimada</div>
+        <div class="font-mono text-2xl font-bold text-accent mt-1">${money(comisiones)}</div>
+      </div>
+    </div>
+
+    <div class="mt-5 rounded-xl bg-card2 card-edge px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        ${svgIcon('coffee', 'text-accent')}
+        <div>
+          <div class="text-sm font-semibold text-white">Día de descanso</div>
+          <div class="text-[11px] text-muted">Bloquea tus horarios de hoy</div>
+        </div>
+      </div>
+      <button data-action="toggle-rest" data-id="${barber.id}" class="w-12 h-7 rounded-full relative transition-colors ${barber.restDay ? 'bg-accent' : 'bg-edge'}">
+        <span class="absolute top-0.5 ${barber.restDay ? 'left-6' : 'left-0.5'} w-6 h-6 rounded-full bg-white transition-all"></span>
+      </button>
+    </div>
+
+    <div class="mt-6 flex items-center justify-between">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Agenda de hoy</div>
+      <div class="text-[11px] text-muted font-mono">${appts.length} citas</div>
+    </div>
+
+    ${barber.restDay ? `
+      <div class="mt-3 rounded-xl border border-edge bg-card2/60 px-4 py-6 text-center text-xs text-muted">
+        Horario bloqueado — día de descanso activo.
+      </div>
+    ` : appts.length === 0 ? `
+      <div class="mt-3 rounded-xl border border-dashed border-edge px-4 py-6 text-center text-xs text-muted">
+        Sin citas todavía. Agenda una desde la vista de Cliente para verla aparecer aquí.
+      </div>
+    ` : `
+      <div class="mt-3 space-y-2.5">
+        ${appts.map(a => `
+          <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3">
+            <div class="w-12 text-center shrink-0">
+              <div class="font-mono text-xs font-bold text-accent">${a.time}</div>
+            </div>
+            <div class="w-px h-8 bg-edge"></div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-white">${a.clientName}</div>
+              <div class="text-[11px] text-muted">${a.serviceName}</div>
+            </div>
+            <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
+              ${a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  </div>`;
+}
+
+/* ============================ VIEW: MANAGER PANEL ============================ */
+
+function renderManagerPanel() {
+  const ingresosProyectados = DB.members.reduce((sum, m) => sum + PLANS[m.plan].price, 0);
+  const planCounts = {};
+  DB.members.forEach(m => { planCounts[m.plan] = (planCounts[m.plan] || 0) + 1; });
+  const topPlan = Object.entries(planCounts).sort((a,b) => b[1]-a[1])[0];
+  const totalAfiliados = DB.members.length;
+
+  return `
+  <div class="px-5 pt-6">
+    <div class="font-display text-3xl text-white leading-none">PANEL <span class="text-accent">GERENCIA</span></div>
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">La Mafia · Pereira</div>
+
+    <div class="grid grid-cols-1 gap-3 mt-5">
+      <div class="rounded-xl bg-card card-edge px-4 py-4">
+        <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('trend','w-3.5 h-3.5')} Ingresos proyectados por membresías</div>
+        <div class="font-mono text-3xl font-bold text-accent mt-1">${money(ingresosProyectados)}<span class="text-sm text-muted">/mes</span></div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl bg-card card-edge px-4 py-4">
+          <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('star','w-3.5 h-3.5')} Plan más vendido</div>
+          <div class="font-display text-2xl text-white mt-1" style="color:${PLANS[topPlan[0]].color}">${PLANS[topPlan[0]].label.toUpperCase()}</div>
+          <div class="text-[11px] text-muted mt-0.5">${topPlan[1]} afiliados</div>
+        </div>
+        <div class="rounded-xl bg-card card-edge px-4 py-4">
+          <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('users','w-3.5 h-3.5')} Afiliados activos</div>
+          <div class="font-mono text-2xl font-bold text-white mt-1">${totalAfiliados}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted">Control de créditos por afiliado</div>
+    <div class="mt-3 space-y-2.5">
+      ${DB.members.map(m => {
+        const plan = PLANS[m.plan];
+        const cortesLeft = plan.cortes - m.cortesUsados;
+        return `
+        <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold text-white">${m.name}</div>
+              <div class="text-[11px] text-muted mt-0.5">${m.phone} · Plan ${plan.label}</div>
+            </div>
+            <div class="text-right">
+              <div class="font-mono text-sm font-bold ${cortesLeft <= 0 ? 'text-ember' : 'text-accent'}">${cortesLeft}/${plan.cortes}</div>
+              <div class="text-[10px] text-muted">créditos rest.</div>
+            </div>
+          </div>
+          <div class="flex gap-1.5 mt-2.5">
+            ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < m.cortesUsados ? 'filled' : 'empty'}" style="width:12px;height:12px;"></div>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="mt-6 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
+      ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
+      <span>El sistema descuenta créditos automáticamente en cada cita, evitando cortes no registrados o pérdidas por control manual.</span>
+    </div>
+  </div>`;
+}
+
+/* ============================ EVENT HANDLING ============================ */
+
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+
+  switch (action) {
+    case 'switch-main':
+      UI.main = target.dataset.view;
+      if (UI.main === 'client') { UI.clientMode = 'home'; }
+      render();
+      break;
+
+    case 'go-client-home':
+      UI.clientMode = 'home';
+      UI.newStep = 1;
+      UI.newSel = { service: null, barberId: null, date: null, time: null, name: '', phone: '' };
+      UI.memberId = null;
+      UI.memberStep = 1;
+      UI.memberSel = { barberId: null, date: null, time: null };
+      UI.lastConfirmedCode = null;
+      render();
+      break;
+
+    case 'go-new-client':
+      UI.clientMode = 'new';
+      UI.newStep = 1;
+      render();
+      break;
+
+    case 'go-member':
+      UI.clientMode = 'member';
+      UI.memberId = null;
+      UI.memberStep = 1;
+      render();
+      break;
+
+    case 'pick-service':
+      UI.newSel.service = target.dataset.id;
+      UI.newStep = 2;
+      render();
+      break;
+
+    case 'pick-barber': {
+      const key = target.dataset.sel;
+      UI[key].barberId = target.dataset.id;
+      if (key === 'newSel') UI.newStep = 3;
+      if (key === 'memberSel') UI.memberStep = 2;
+      render();
+      break;
+    }
+
+    case 'pick-date': {
+      const key = target.dataset.sel;
+      UI[key].date = target.dataset.date;
+      render();
+      break;
+    }
+
+    case 'pick-time': {
+      const key = target.dataset.sel;
+      UI[key].time = target.dataset.time;
+      render();
+      break;
+    }
+
+    case 'to-step-4':
+      UI.newStep = 4;
+      render();
+      break;
+
+    case 'confirm-new-client': {
+      const nameEl = document.getElementById('input-name');
+      const phoneEl = document.getElementById('input-phone');
+      UI.newSel.name = nameEl ? nameEl.value.trim() : '';
+      UI.newSel.phone = phoneEl ? phoneEl.value.trim() : '';
+      if (!UI.newSel.name) { nameEl.focus(); return; }
+
+      UI.confirming = true;
+      render();
+      setTimeout(() => {
+        const svc = SERVICES.find(s => s.id === UI.newSel.service);
+        const appt = {
+          id: DB.nextApptId++,
+          clientName: UI.newSel.name || 'Cliente',
+          type: 'nuevo',
+          serviceName: svc ? svc.name : '',
+          barberId: UI.newSel.barberId,
+          date: UI.newSel.date,
+          time: UI.newSel.time,
+          status: 'confirmada',
+        };
+        DB.appointments.push(appt);
+        saveDB(DB);
+        UI.confirming = false;
+        UI.lastConfirmedCode = 'LM-' + String(appt.id).padStart(4, '0');
+        render();
+      }, 1100);
+      break;
+    }
+
+    case 'pick-member':
+      UI.memberId = target.dataset.id;
+      UI.memberStep = 1;
+      render();
+      break;
+
+    case 'member-confirm': {
+      UI.confirming = true;
+      render();
+      setTimeout(() => {
+        const member = DB.members.find(m => m.id === UI.memberId);
+        const appt = {
+          id: DB.nextApptId++,
+          clientName: member.name,
+          type: 'miembro',
+          serviceName: 'Corte (Plan ' + PLANS[member.plan].label + ')',
+          barberId: UI.memberSel.barberId,
+          date: UI.memberSel.date,
+          time: UI.memberSel.time,
+          status: 'confirmada',
+        };
+        DB.appointments.push(appt);
+        member.cortesUsados = Math.min(member.cortesUsados + 1, PLANS[member.plan].cortes);
+        saveDB(DB);
+        UI.confirming = false;
+        UI.lastConfirmedCode = 'LM-' + String(appt.id).padStart(4, '0');
+        render();
+      }, 1100);
+      break;
+    }
+
+    case 'select-barber':
+      UI.selectedBarberId = target.dataset.id;
+      render();
+      break;
+
+    case 'toggle-rest': {
+      const b = DB.barbers.find(b => b.id === target.dataset.id);
+      b.restDay = !b.restDay;
+      saveDB(DB);
+      render();
+      break;
+    }
+  }
+});
+
+render();
+</script>
+</body>
+</html>
