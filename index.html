@@ -148,7 +148,7 @@
    vistas de Cliente, Barbero y Gerencia en tiempo real.
    ============================================================ */
 
-const STORAGE_KEY = 'lamafia_db_v1';
+const STORAGE_KEY = 'lamafia_db_v2';
 
 const SERVICES = [
   { id: 'trad',  name: 'Corte Tradicional', price: 25000, mins: 30 },
@@ -159,24 +159,57 @@ const SERVICES = [
 ];
 
 const PLANS = {
-  BASE: { label: 'Base', price: 89000,  cortes: 2, extras: 0, color: '#8b8f97' },
-  PRO:  { label: 'Pro',  price: 129000, cortes: 3, extras: 2, color: '#ff9143' },
-  VIP:  { label: 'VIP',  price: 169000, cortes: 4, extras: 4, color: '#ff6a00' },
+  premium: {
+    base: { label: 'Base', price: 64900, cortes: 4, extras: 0,
+      benefits: ['4 cortes al mes', 'Prioridad en agenda'], mostSold: false },
+    pro:  { label: 'Pro',  price: 79900, cortes: 4, extras: 2,
+      benefits: ['4 cortes al mes', '1 perfilación de barba', '1 perfilación de cejas', '10% dcto productos'], mostSold: true },
+    vip:  { label: 'VIP',  price: 99900, cortes: 4, extras: 3,
+      benefits: ['4 cortes al mes', 'Prioridad total agenda', '1 perfilación de barba', '1 servicio de cejas', 'Limpieza facial básica', '15% dcto productos'], mostSold: false },
+  },
+  estandar: {
+    base: { label: 'Base', price: 36900, cortes: 2, extras: 0,
+      benefits: ['2 cortes al mes', 'Prioridad en agenda'], mostSold: false },
+    pro:  { label: 'Pro',  price: 44900, cortes: 2, extras: 1,
+      benefits: ['2 cortes al mes', '1 perfilación de barba', '10% dcto productos'], mostSold: true },
+    vip:  { label: 'VIP',  price: 61900, cortes: 3, extras: 4,
+      benefits: ['3 cortes al mes', 'Prioridad total en agenda', '2 perfilaciones de barba', '1 servicio de cejas', 'Limpieza facial básica', '10% dcto productos'], mostSold: false },
+  },
 };
 
+const CATEGORY_META = {
+  premium: { label: 'Premium', icon: '✨', color: '#ff6a00', priceClass: 'text-accent font-bold', rowHighlight: 'bg-accent/5' },
+  estandar: { label: 'Estándar', icon: '💈', color: '#c7cbd1', priceClass: 'text-white font-semibold', rowHighlight: 'bg-white/[0.02]' },
+};
+
+function planOf(member) {
+  return PLANS[member.category][member.tier];
+}
+function categoryMeta(category) {
+  return CATEGORY_META[category];
+}
+
 const TIME_SLOTS = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM'];
+
+// Cupos extra fuera de la grilla pública — invisibles al público, siempre disponibles
+// para miembros (mientras no los tome otro miembro), sin chocar nunca con la agenda pública.
+const MEMBER_RESERVED_SLOTS = ['12:30 PM', '6:30 PM'];
+
+// Minutos que un cupo liberado por cancelación queda reservado solo para miembros
+// antes de abrirse al público en general. Ajustable según lo que necesite el negocio.
+const CANCEL_PRIORITY_WINDOW_MINUTES = 15;
 
 function defaultDB() {
   return {
     barbers: [
-      { id: 'carlos', name: 'Carlos B.', role: 'Barbero Senior', restDay: false, commissionPerCut: 12000 },
-      { id: 'mateo',  name: 'Mateo R.',  role: 'Especialista en Fade', restDay: false, commissionPerCut: 12000 },
-      { id: 'andres', name: 'Andrés G.', role: 'Barbero Junior', restDay: false, commissionPerCut: 9000 },
+      { id: 'Sebastian R.', name: 'Sebastian R.', role: 'Barbero Senior', restDay: false, commissionPerCut: 12000, blockedSlots: {} },
+      { id: 'mateo',  name: 'Mateo R.',  role: 'Especialista en Fade', restDay: false, commissionPerCut: 12000, blockedSlots: {} },
+      { id: 'andres', name: 'Andrés G.', role: 'Barbero Junior', restDay: false, commissionPerCut: 9000, blockedSlots: {} },
     ],
     members: [
-      { id: 'juan',    name: 'Juan Pérez',   phone: '300 111 2233', plan: 'VIP', cortesUsados: 1, extrasUsados: 2 },
-      { id: 'andrea',  name: 'Andrea Gómez', phone: '311 222 3344', plan: 'PRO', cortesUsados: 3, extrasUsados: 1 },
-      { id: 'felipe',  name: 'Felipe Ruiz',  phone: '320 333 4455', plan: 'BASE', cortesUsados: 0, extrasUsados: 0 },
+      { id: 'juan',    name: 'Juan Pérez',   phone: '300 111 2233', category: 'premium',  tier: 'vip',  cortesUsados: 1, extrasUsados: 2 },
+      { id: 'andrea',  name: 'Andrea Gómez', phone: '311 222 3344', category: 'premium',  tier: 'pro',  cortesUsados: 3, extrasUsados: 1 },
+      { id: 'felipe',  name: 'Felipe Ruiz',  phone: '320 333 4455', category: 'estandar', tier: 'base', cortesUsados: 0, extrasUsados: 0 },
     ],
     appointments: [],
     nextApptId: 1,
@@ -207,13 +240,14 @@ let UI = {
   main: 'client',            // 'client' | 'barber' | 'manager'
   clientMode: 'home',        // 'home' | 'new' | 'member'
   newStep: 1,
-  newSel: { service: null, barberId: null, date: null, time: null, name: '', phone: '' },
+  newSel: { service: null, barberId: null, date: null, time: null, reserved: false, name: '', phone: '' },
   memberId: null,
   memberStep: 1,
-  memberSel: { barberId: null, date: null, time: null },
+  memberSel: { barberId: null, date: null, time: null, reserved: false },
   confirming: false,
   lastConfirmedCode: null,
-  selectedBarberId: 'carlos',
+  selectedBarberId: 'Sebastian R.',
+  pendingCancelApptId: null,
 };
 
 function money(n) {
@@ -235,6 +269,98 @@ function nextDates(n) {
     });
   }
   return out;
+}
+
+function getTodayIso() {
+  return nextDates(1)[0].iso;
+}
+
+function timeToMinutes(t) {
+  const [time, ampm] = t.split(' ');
+  let [h, m] = time.split(':').map(Number);
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+/* --- Disponibilidad de agenda ---
+   Reglas:
+   - Un barbero puede bloquear franjas sueltas (blockedSlots) o el día completo (restDay, hoy).
+   - Un cupo ocupado por una cita confirmada no se muestra más al público.
+   - Los miembros tienen cupos extra (MEMBER_RESERVED_SLOTS) fuera de la grilla pública,
+     que nunca chocan con las citas del público.
+   - Al cancelarse una cita, el cupo queda reservado solo para miembros durante
+     CANCEL_PRIORITY_WINDOW_MINUTES antes de reabrirse al público. */
+
+function isSlotBlockedByBarber(barberId, date, time) {
+  const b = DB.barbers.find(x => x.id === barberId);
+  if (!b) return false;
+  if (b.restDay && date === getTodayIso()) return true;
+  const blocked = (b.blockedSlots && b.blockedSlots[date]) || [];
+  return blocked.includes(time);
+}
+
+function activeApptAt(barberId, date, time) {
+  return DB.appointments.find(a => a.barberId === barberId && a.date === date && a.time === time && a.status === 'confirmada');
+}
+
+function lastCancelledAt(barberId, date, time) {
+  const list = DB.appointments.filter(a => a.barberId === barberId && a.date === date && a.time === time && a.status === 'cancelada' && a.freedAt);
+  if (!list.length) return null;
+  return list.sort((a, b) => b.freedAt - a.freedAt)[0];
+}
+
+function isInPriorityWindow(barberId, date, time) {
+  const c = lastCancelledAt(barberId, date, time);
+  if (!c) return false;
+  return (Date.now() - c.freedAt) < CANCEL_PRIORITY_WINDOW_MINUTES * 60000;
+}
+
+function isSlotAvailableForPublic(barberId, date, time) {
+  if (!barberId || !date) return true;
+  if (isSlotBlockedByBarber(barberId, date, time)) return false;
+  if (activeApptAt(barberId, date, time)) return false;
+  if (isInPriorityWindow(barberId, date, time)) return false;
+  return true;
+}
+
+function isSlotAvailableForMember(barberId, date, time) {
+  if (!barberId || !date) return true;
+  if (isSlotBlockedByBarber(barberId, date, time)) return false;
+  if (activeApptAt(barberId, date, time)) return false;
+  return true; // los miembros ignoran la ventana de prioridad: entran de inmediato
+}
+
+function isReservedSlotAvailable(barberId, date, time) {
+  if (!barberId || !date) return true;
+  if (isSlotBlockedByBarber(barberId, date, time)) return false;
+  return !activeApptAt(barberId, date, time);
+}
+
+function upcomingApptForMember(memberId) {
+  const list = DB.appointments.filter(a => a.memberId === memberId && a.status === 'confirmada');
+  if (!list.length) return null;
+  return list.sort((a, b) => a.date === b.date ? timeToMinutes(a.time) - timeToMinutes(b.time) : a.date.localeCompare(b.date))[0];
+}
+
+function cancelAppointment(id, canceller) {
+  const appt = DB.appointments.find(a => a.id === id);
+  if (!appt || appt.status === 'cancelada') return;
+  appt.status = 'cancelada';
+  appt.cancelledBy = canceller;
+  appt.freedAt = Date.now();
+  if (appt.type === 'miembro' && appt.memberId) {
+    const m = DB.members.find(x => x.id === appt.memberId);
+    if (m) m.cortesUsados = Math.max(0, m.cortesUsados - 1);
+  }
+  saveDB(DB);
+}
+
+function fmtCountdown(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
 function svgIcon(name, cls) {
@@ -309,23 +435,59 @@ function renderClientHome() {
       </button>
     </div>
 
-    <div class="mt-8">
-      <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">Planes mensuales</div>
-      <div class="grid grid-cols-3 gap-2">
-        ${Object.entries(PLANS).map(([key, p]) => `
-          <div class="rounded-xl card-edge bg-card2 px-2 py-3 text-center">
-            <div class="font-display text-lg" style="color:${p.color}">${p.label.toUpperCase()}</div>
-            <div class="font-mono text-[11px] text-muted mt-1">${money(p.price)}</div>
-            <div class="text-[10px] text-muted mt-1">${p.cortes} cortes/mes</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
+    ${renderPlansSection()}
 
     <div class="mt-6 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
       ${svgIcon('clock', 'shrink-0 mt-0.5 text-accent')}
       <span>Vista de demostración — usa la barra inferior para ver el panel del barbero y de gerencia.</span>
     </div>
+  </div>`;
+}
+
+function renderPlanTable(category) {
+  const meta = categoryMeta(category);
+  const tiers = ['base', 'pro', 'vip'];
+  return `
+  <div>
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-lg">${meta.icon}</span>
+      <div class="font-display text-2xl tracking-wide">Membresías ${meta.label}</div>
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-edge bg-card">
+      <table class="w-full text-left border-collapse text-[11px]">
+        <thead>
+          <tr class="border-b border-edge bg-card2/50 text-muted font-bold uppercase tracking-wider">
+            <th class="py-2.5 px-3">Plan</th>
+            <th class="py-2.5 px-2">Precio</th>
+            <th class="py-2.5 px-3">Beneficios</th>
+            <th class="py-2.5 px-3 text-center">Vigencia</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-edge/60 font-body">
+          ${tiers.map(t => {
+            const p = PLANS[category][t];
+            const rowCls = p.mostSold ? meta.rowHighlight : '';
+            return `
+            <tr class="${rowCls}">
+              <td class="py-3 px-3 font-bold text-white align-top">${p.label}${p.mostSold ? `<span class="text-[9px] ${category==='premium'?'text-accent2':'text-muted'} block font-normal italic">(más vendido)</span>` : ''}</td>
+              <td class="py-3 px-2 font-mono ${meta.priceClass} align-top whitespace-nowrap">${money(p.price)}</td>
+              <td class="py-3 px-3 text-muted align-top">
+                ${p.benefits.map(b => `<div class="${b.includes('dcto') ? 'text-accent2' : ''}">• ${b}</div>`).join('')}
+              </td>
+              <td class="py-3 px-3 text-center text-muted align-top whitespace-nowrap">30 días</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderPlansSection() {
+  return `
+  <div class="mt-8 space-y-8">
+    ${renderPlanTable('premium')}
+    ${renderPlanTable('estandar')}
   </div>`;
 }
 
@@ -403,8 +565,41 @@ function stepPickBarber(selKey) {
 function stepPickDateTime(selKey) {
   const dates = nextDates(6);
   const sel = UI[selKey];
+  const isMember = selKey === 'memberSel';
+
+  let gridHtml = '';
+  if (!isMember) {
+    const openSlots = sel.date ? TIME_SLOTS.filter(t => isSlotAvailableForPublic(sel.barberId, sel.date, t)) : TIME_SLOTS;
+    gridHtml = sel.date && openSlots.length === 0 ? `
+      <div class="mt-5 rounded-xl border border-dashed border-edge px-4 py-6 text-center text-xs text-muted">
+        No hay horarios disponibles con este barbero para esta fecha.<br/>Prueba otra fecha, otro barbero, o pregunta por nuestras membresías.
+      </div>` : `
+      <div class="grid grid-cols-3 gap-2 mt-5">
+        ${openSlots.map(t => timeChip(selKey, t, false, false)).join('')}
+      </div>`;
+  } else {
+    gridHtml = `
+      <div class="grid grid-cols-3 gap-2 mt-5">
+        ${TIME_SLOTS.map(t => {
+          const avail = sel.date ? isSlotAvailableForMember(sel.barberId, sel.date, t) : true;
+          return timeChip(selKey, t, false, !avail);
+        }).join('')}
+      </div>
+      <div class="mt-5">
+        <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-accent mb-2">${svgIcon('star', 'w-3.5 h-3.5')} Cupos preferentes · solo miembros</div>
+        <div class="grid grid-cols-3 gap-2">
+          ${MEMBER_RESERVED_SLOTS.map(t => {
+            const avail = sel.date ? isReservedSlotAvailable(sel.barberId, sel.date, t) : true;
+            return timeChip(selKey, t, true, !avail);
+          }).join('')}
+        </div>
+        <div class="text-[10px] text-muted mt-2">Cupos extra reservados para ti, aunque la agenda pública esté llena.</div>
+      </div>
+    `;
+  }
+
   return `
-  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${selKey==='newSel'?'3':'2'}. Fecha y hora</div>
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${isMember ? '2' : '3'}. Fecha y hora</div>
   <div class="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
     ${dates.map(d => `
       <button data-action="pick-date" data-sel="${selKey}" data-date="${d.iso}" class="shrink-0 w-16 rounded-xl card-edge py-2.5 text-center transition-colors ${sel.date===d.iso ? 'bg-accent text-black border-accent' : 'bg-card text-white hover:border-accent/60'}">
@@ -415,20 +610,33 @@ function stepPickDateTime(selKey) {
     `).join('')}
   </div>
 
-  <div class="grid grid-cols-3 gap-2 mt-5">
-    ${TIME_SLOTS.map(t => `
-      <button data-action="pick-time" data-sel="${selKey}" data-time="${t}" class="rounded-lg card-edge py-2.5 text-xs font-semibold transition-colors ${sel.time===t ? 'bg-accent text-black border-accent' : 'bg-card text-white hover:border-accent/60'}">
-        ${t}
-      </button>
-    `).join('')}
-  </div>
+  ${gridHtml}
 
   ${sel.date && sel.time ? `
-    <button data-action="${selKey==='newSel' ? 'to-step-4' : 'member-confirm'}" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
-      ${selKey==='newSel' ? 'CONTINUAR' : 'CONFIRMAR CITA'}
+    <button data-action="${isMember ? 'member-confirm' : 'to-step-4'}" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
+      ${isMember ? 'CONFIRMAR CITA' : 'CONTINUAR'}
     </button>
   ` : ''}
   `;
+}
+
+function timeChip(selKey, time, reserved, disabled) {
+  const sel = UI[selKey];
+  const isSelected = sel.time === time && !!sel.reserved === !!reserved;
+  let cls;
+  if (disabled) {
+    cls = 'bg-card2/40 border-edge text-muted/50 cursor-not-allowed';
+  } else if (isSelected) {
+    cls = 'bg-accent text-black border-accent';
+  } else if (reserved) {
+    cls = 'bg-accent/10 border-accent/40 text-accent hover:border-accent';
+  } else {
+    cls = 'bg-card text-white border-edge hover:border-accent/60';
+  }
+  const attrs = disabled ? 'disabled' : `data-action="pick-time" data-sel="${selKey}" data-time="${time}" data-reserved="${reserved ? '1' : '0'}"`;
+  return `<button ${attrs} class="rounded-lg border py-2.5 text-xs font-semibold transition-colors ${cls}">
+    ${time}${disabled ? '<span class="block text-[9px] mt-0.5 normal-case">Ocupado</span>' : ''}
+  </button>`;
 }
 
 function stepBasicData() {
@@ -498,7 +706,7 @@ function renderNewClientSuccess() {
 
     <div class="w-full mt-5 rounded-xl border border-accent/40 bg-accent/10 px-4 py-4 text-left">
       <div class="flex items-center gap-2 text-accent font-display text-lg">${svgIcon('star')} AHORRA EN TU PRÓXIMO CORTE</div>
-      <p class="text-xs text-muted mt-1.5 leading-relaxed">Con el Plan Pro pagas ${money(PLANS.PRO.price)}/mes y tu corte sale a ${money(Math.round(PLANS.PRO.price/PLANS.PRO.cortes))} en vez de ${money(SERVICES.find(s=>s.id===UI.newSel.service)?.price||25000)}.</p>
+      <p class="text-xs text-muted mt-1.5 leading-relaxed">Con el Plan Estándar Pro pagas ${money(PLANS.estandar.pro.price)}/mes y tu corte sale a ${money(Math.round(PLANS.estandar.pro.price/PLANS.estandar.pro.cortes))} en vez de ${money(SERVICES.find(s=>s.id===UI.newSel.service)?.price||25000)}.</p>
       <button data-action="go-client-home" class="mt-3 w-full bg-accent text-black font-bold text-xs uppercase tracking-wide rounded-lg py-2.5">Ver planes</button>
     </div>
 
@@ -533,24 +741,26 @@ function renderMemberPicker() {
     ${flowHeader('INGRESAR COMO MIEMBRO', () => {}, 'go-client-home')}
     <p class="text-xs text-muted mb-4">Simulación de inicio de sesión — elige un perfil para continuar.</p>
     <div class="grid grid-cols-1 gap-2.5">
-      ${DB.members.map(m => `
+      ${DB.members.map(m => { const meta = categoryMeta(m.category); const plan = planOf(m); return `
         <button data-action="pick-member" data-id="${m.id}" class="w-full text-left bg-card card-edge hover:border-accent/60 rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors">
-          <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center font-display text-lg" style="color:${PLANS[m.plan].color}">${m.name.charAt(0)}</div>
+          <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center font-display text-lg" style="color:${meta.color}">${m.name.charAt(0)}</div>
           <div class="flex-1">
             <div class="font-semibold text-white text-sm">${m.name}</div>
-            <div class="text-[11px] text-muted mt-0.5">Plan ${PLANS[m.plan].label}</div>
+            <div class="text-[11px] text-muted mt-0.5">${meta.icon} ${meta.label} ${plan.label} · ${money(plan.price)}/mes</div>
           </div>
           ${svgIcon('star', 'text-accent')}
         </button>
-      `).join('')}
+      `; }).join('')}
     </div>
   </div>`;
 }
 
 function memberBalanceCard(member) {
-  const plan = PLANS[member.plan];
+  const meta = categoryMeta(member.category);
+  const plan = planOf(member);
   const cortesLeft = plan.cortes - member.cortesUsados;
   const extrasLeft = plan.extras - member.extrasUsados;
+  const upcoming = upcomingApptForMember(member.id);
   return `
   <div class="rounded-2xl bg-card card-edge overflow-hidden mb-6">
     <div class="px-4 pt-4 pb-3 flex items-center justify-between">
@@ -558,27 +768,54 @@ function memberBalanceCard(member) {
         <div class="text-[11px] text-muted">¡Bienvenido de nuevo!</div>
         <div class="font-display text-xl text-white leading-tight">${member.name.toUpperCase()}</div>
       </div>
-      <div class="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style="color:${plan.color}; border:1px solid ${plan.color}">Plan ${plan.label}</div>
+      <div class="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style="color:${meta.color}; border:1px solid ${meta.color}">${meta.icon} ${meta.label} ${plan.label}</div>
     </div>
     <div class="ticket-notch border-t border-dashed border-edge mx-4"></div>
     <div class="px-5 py-4">
       <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Cortes este mes — ${cortesLeft}/${plan.cortes} disponibles</div>
       <div class="flex gap-2 mb-4">
-        ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < member.cortesUsados ? 'filled' : 'empty'}"></div>`).join('')}
+        ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < member.cortesUsados ? 'filled' : 'empty'}" style="${i < member.cortesUsados ? `background:${meta.color};box-shadow:0 0 8px ${meta.color}99;` : ''} border-color:${meta.color};"></div>`).join('')}
       </div>
       ${plan.extras > 0 ? `
-        <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Extras (barba/cejas) — ${extrasLeft}/${plan.extras} disponibles</div>
-        <div class="flex gap-2">
-          ${Array.from({length: plan.extras}).map((_,i) => `<div class="punch-dot ${i < member.extrasUsados ? 'filled' : 'empty'}" style="width:12px;height:12px;"></div>`).join('')}
+        <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Servicios extra — ${extrasLeft}/${plan.extras} disponibles</div>
+        <div class="flex gap-2 mb-4">
+          ${Array.from({length: plan.extras}).map((_,i) => `<div class="punch-dot ${i < member.extrasUsados ? 'filled' : 'empty'}" style="width:12px;height:12px; ${i < member.extrasUsados ? `background:${meta.color};` : ''} border-color:${meta.color};"></div>`).join('')}
         </div>
       ` : ''}
+      <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2 mt-1">Beneficios de tu plan</div>
+      <div class="space-y-1">
+        ${plan.benefits.map(b => `<div class="text-[11px] text-muted flex items-center gap-1.5">${svgIcon('check', 'w-3 h-3 shrink-0')} <span class="${b.includes('dcto') ? 'text-accent2' : ''}">${b}</span></div>`).join('')}
+      </div>
     </div>
+    ${upcoming ? `
+    <div class="ticket-notch border-t border-dashed border-edge mx-4"></div>
+    <div class="px-5 py-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-[10px] uppercase tracking-[0.2em] text-muted">Próxima cita</div>
+          <div class="text-sm font-semibold text-white mt-1">${formatDateLabel(upcoming.date)} · ${upcoming.time}${upcoming.reserved ? ' ⭐' : ''}</div>
+          <div class="text-[11px] text-muted">${DB.barbers.find(b=>b.id===upcoming.barberId)?.name || '—'}</div>
+        </div>
+        ${UI.pendingCancelApptId === upcoming.id ? `
+          <div class="flex flex-col items-end gap-1.5">
+            <div class="text-[10px] text-muted">¿Cancelar?</div>
+            <div class="flex gap-1.5">
+              <button data-action="cancel-appt-confirm" data-id="${upcoming.id}" data-by="cliente" class="text-[11px] font-bold uppercase text-ember border border-ember/50 rounded-lg px-2.5 py-1.5">Sí, cancelar</button>
+              <button data-action="cancel-appt-abort" class="text-[11px] font-bold uppercase text-muted border border-edge rounded-lg px-2.5 py-1.5">No</button>
+            </div>
+          </div>
+        ` : `
+          <button data-action="request-cancel-appt" data-id="${upcoming.id}" class="text-[11px] font-bold uppercase text-muted border border-edge rounded-lg px-3 py-1.5 hover:border-ember/60 hover:text-ember transition-colors">Cancelar</button>
+        `}
+      </div>
+    </div>
+    ` : ''}
   </div>`;
 }
 
 function renderMemberSuccess() {
   const member = DB.members.find(m => m.id === UI.memberId);
-  const plan = PLANS[member.plan];
+  const plan = planOf(member);
   const cortesLeft = plan.cortes - member.cortesUsados;
   return `
   <div class="px-5 pt-16 flex flex-col items-center text-center">
@@ -592,12 +829,13 @@ function renderMemberSuccess() {
     <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
       ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.memberSel.barberId)?.name || '—')}
       ${summaryRow('Fecha', formatDateLabel(UI.memberSel.date) + ' · ' + UI.memberSel.time)}
+      ${UI.memberSel.reserved ? summaryRow('Tipo de cupo', '⭐ Cupo preferente') : ''}
       ${summaryRow('Créditos restantes', cortesLeft + '/' + plan.cortes, true)}
     </div>
 
     <div class="w-full mt-5 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2 text-left">
       ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
-      <span>Se descontó 1 crédito de tu Plan ${plan.label} automáticamente.</span>
+      <span>Se descontó 1 crédito de tu Plan ${categoryMeta(member.category).label} ${plan.label} automáticamente.</span>
     </div>
 
     <button data-action="go-client-home" class="mt-6 text-xs text-muted underline underline-offset-4">Volver al inicio</button>
@@ -608,12 +846,12 @@ function renderMemberSuccess() {
 
 function renderBarberDashboard() {
   const barber = DB.barbers.find(b => b.id === UI.selectedBarberId) || DB.barbers[0];
-  const todayIso = nextDates(1)[0].iso;
+  const todayIso = getTodayIso();
   const appts = DB.appointments
     .filter(a => a.barberId === barber.id && a.date === todayIso)
-    .sort((a,b) => TIME_SLOTS.indexOf(a.time) - TIME_SLOTS.indexOf(b.time));
+    .sort((a,b) => timeToMinutes(a.time) - timeToMinutes(b.time));
 
-  const cortesMes = DB.appointments.filter(a => a.barberId === barber.id).length;
+  const cortesMes = DB.appointments.filter(a => a.barberId === barber.id && a.status === 'confirmada').length;
   const comisiones = cortesMes * barber.commissionPerCut;
 
   return `
@@ -646,7 +884,7 @@ function renderBarberDashboard() {
         ${svgIcon('coffee', 'text-accent')}
         <div>
           <div class="text-sm font-semibold text-white">Día de descanso</div>
-          <div class="text-[11px] text-muted">Bloquea tus horarios de hoy</div>
+          <div class="text-[11px] text-muted">Bloquea toda tu agenda de hoy</div>
         </div>
       </div>
       <button data-action="toggle-rest" data-id="${barber.id}" class="w-12 h-7 rounded-full relative transition-colors ${barber.restDay ? 'bg-accent' : 'bg-edge'}">
@@ -654,9 +892,27 @@ function renderBarberDashboard() {
       </button>
     </div>
 
+    ${barber.restDay ? '' : `
+    <div class="mt-3">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Bloquear horas sueltas de hoy</div>
+      <div class="grid grid-cols-4 gap-2">
+        ${TIME_SLOTS.map(t => {
+          const occupied = !!activeApptAt(barber.id, todayIso, t);
+          const blocked = isSlotBlockedByBarber(barber.id, todayIso, t) && !occupied;
+          if (occupied) {
+            return `<div class="rounded-lg border border-edge bg-card2/40 text-muted/50 text-[10px] font-semibold py-2 text-center cursor-not-allowed">${t}<span class="block text-[9px]">Ocupado</span></div>`;
+          }
+          return `<button data-action="toggle-slot-block" data-barber-id="${barber.id}" data-time="${t}" class="rounded-lg border text-[10px] font-semibold py-2 text-center transition-colors ${blocked ? 'bg-ember/15 border-ember/50 text-ember' : 'bg-card border-edge text-white hover:border-accent/60'}">
+            ${t}${blocked ? '<span class="block text-[9px]">Bloqueado</span>' : ''}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+    `}
+
     <div class="mt-6 flex items-center justify-between">
       <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Agenda de hoy</div>
-      <div class="text-[11px] text-muted font-mono">${appts.length} citas</div>
+      <div class="text-[11px] text-muted font-mono">${appts.filter(a=>a.status==='confirmada').length} citas</div>
     </div>
 
     ${barber.restDay ? `
@@ -669,33 +925,90 @@ function renderBarberDashboard() {
       </div>
     ` : `
       <div class="mt-3 space-y-2.5">
-        ${appts.map(a => `
-          <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3">
-            <div class="w-12 text-center shrink-0">
-              <div class="font-mono text-xs font-bold text-accent">${a.time}</div>
-            </div>
-            <div class="w-px h-8 bg-edge"></div>
-            <div class="flex-1">
-              <div class="text-sm font-semibold text-white">${a.clientName}</div>
-              <div class="text-[11px] text-muted">${a.serviceName}</div>
-            </div>
-            <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
-              ${a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
-            </div>
-          </div>
-        `).join('')}
+        ${appts.map(a => appointmentRow(a)).join('')}
       </div>
     `}
   </div>`;
 }
 
+function appointmentRow(a) {
+  const cancelled = a.status === 'cancelada';
+  return `
+    <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3 ${cancelled ? 'opacity-50' : ''}">
+      <div class="w-12 text-center shrink-0">
+        <div class="font-mono text-xs font-bold ${cancelled ? 'text-muted line-through' : 'text-accent'}">${a.time}</div>
+      </div>
+      <div class="w-px h-8 bg-edge"></div>
+      <div class="flex-1">
+        <div class="text-sm font-semibold text-white ${cancelled ? 'line-through' : ''}">${a.clientName}</div>
+        <div class="text-[11px] text-muted">${a.serviceName}${a.reserved ? ' · ⭐ preferente' : ''}</div>
+      </div>
+      ${cancelled ? `
+        <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-ember border border-ember/40">Cancelada</div>
+      ` : UI.pendingCancelApptId === a.id ? `
+        <div class="flex flex-col items-end gap-1">
+          <div class="flex gap-1">
+            <button data-action="cancel-appt-confirm" data-id="${a.id}" data-by="barbero" class="text-[9px] font-bold uppercase text-ember border border-ember/50 rounded px-2 py-1">Sí</button>
+            <button data-action="cancel-appt-abort" class="text-[9px] font-bold uppercase text-muted border border-edge rounded px-2 py-1">No</button>
+          </div>
+        </div>
+      ` : `
+        <div class="flex flex-col items-end gap-1">
+          <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
+            ${a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
+          </div>
+          <button data-action="request-cancel-appt" data-id="${a.id}" class="text-[9px] text-muted underline underline-offset-2 hover:text-ember">Cancelar</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
 /* ============================ VIEW: MANAGER PANEL ============================ */
 
+function renderRecentCancellations() {
+  const recent = DB.appointments
+    .filter(a => a.status === 'cancelada' && a.freedAt)
+    .sort((a,b) => b.freedAt - a.freedAt)
+    .slice(0, 5);
+
+  if (!recent.length) return '';
+
+  return `
+  <div class="mt-6">
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">Cancelaciones recientes</div>
+    <div class="space-y-2">
+      ${recent.map(a => {
+        const remaining = CANCEL_PRIORITY_WINDOW_MINUTES * 60000 - (Date.now() - a.freedAt);
+        const barberName = DB.barbers.find(b=>b.id===a.barberId)?.name || '—';
+        return `
+        <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center justify-between">
+          <div>
+            <div class="text-xs text-white font-semibold">${formatDateLabel(a.date)} · ${a.time} — ${barberName}</div>
+            <div class="text-[10px] text-muted mt-0.5">Cancelada por ${a.cancelledBy === 'cliente' ? 'el cliente' : 'el barbero'}</div>
+          </div>
+          ${remaining > 0 ? `
+            <div class="text-right">
+              <div class="text-[9px] uppercase text-accent font-bold tracking-wide">Solo miembros</div>
+              <div class="font-mono text-xs text-muted">${fmtCountdown(remaining)}</div>
+            </div>
+          ` : `
+            <div class="text-[9px] uppercase text-okgreen font-bold tracking-wide">Abierto al público</div>
+          `}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+
 function renderManagerPanel() {
-  const ingresosProyectados = DB.members.reduce((sum, m) => sum + PLANS[m.plan].price, 0);
+  const ingresosProyectados = DB.members.reduce((sum, m) => sum + planOf(m).price, 0);
   const planCounts = {};
-  DB.members.forEach(m => { planCounts[m.plan] = (planCounts[m.plan] || 0) + 1; });
-  const topPlan = Object.entries(planCounts).sort((a,b) => b[1]-a[1])[0];
+  DB.members.forEach(m => { const key = m.category + '|' + m.tier; planCounts[key] = (planCounts[key] || 0) + 1; });
+  const topPlanKey = Object.entries(planCounts).sort((a,b) => b[1]-a[1])[0];
+  const [topCategory, topTier] = topPlanKey[0].split('|');
+  const topPlanCount = topPlanKey[1];
   const totalAfiliados = DB.members.length;
 
   return `
@@ -712,8 +1025,8 @@ function renderManagerPanel() {
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-xl bg-card card-edge px-4 py-4">
           <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('star','w-3.5 h-3.5')} Plan más vendido</div>
-          <div class="font-display text-2xl text-white mt-1" style="color:${PLANS[topPlan[0]].color}">${PLANS[topPlan[0]].label.toUpperCase()}</div>
-          <div class="text-[11px] text-muted mt-0.5">${topPlan[1]} afiliados</div>
+          <div class="font-display text-2xl text-white mt-1" style="color:${categoryMeta(topCategory).color}">${categoryMeta(topCategory).label.toUpperCase()} ${PLANS[topCategory][topTier].label.toUpperCase()}</div>
+          <div class="text-[11px] text-muted mt-0.5">${topPlanCount} afiliados</div>
         </div>
         <div class="rounded-xl bg-card card-edge px-4 py-4">
           <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('users','w-3.5 h-3.5')} Afiliados activos</div>
@@ -725,14 +1038,15 @@ function renderManagerPanel() {
     <div class="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted">Control de créditos por afiliado</div>
     <div class="mt-3 space-y-2.5">
       ${DB.members.map(m => {
-        const plan = PLANS[m.plan];
+        const meta = categoryMeta(m.category);
+        const plan = planOf(m);
         const cortesLeft = plan.cortes - m.cortesUsados;
         return `
         <div class="rounded-xl bg-card card-edge px-4 py-3.5">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-sm font-semibold text-white">${m.name}</div>
-              <div class="text-[11px] text-muted mt-0.5">${m.phone} · Plan ${plan.label}</div>
+              <div class="text-[11px] text-muted mt-0.5">${m.phone} · ${meta.icon} ${meta.label} ${plan.label}</div>
             </div>
             <div class="text-right">
               <div class="font-mono text-sm font-bold ${cortesLeft <= 0 ? 'text-ember' : 'text-accent'}">${cortesLeft}/${plan.cortes}</div>
@@ -740,11 +1054,13 @@ function renderManagerPanel() {
             </div>
           </div>
           <div class="flex gap-1.5 mt-2.5">
-            ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < m.cortesUsados ? 'filled' : 'empty'}" style="width:12px;height:12px;"></div>`).join('')}
+            ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < m.cortesUsados ? 'filled' : 'empty'}" style="width:12px;height:12px; ${i < m.cortesUsados ? `background:${meta.color};` : ''} border-color:${meta.color};"></div>`).join('')}
           </div>
         </div>`;
       }).join('')}
     </div>
+
+    ${renderRecentCancellations()}
 
     <div class="mt-6 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
       ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
@@ -800,6 +1116,9 @@ document.addEventListener('click', (e) => {
     case 'pick-barber': {
       const key = target.dataset.sel;
       UI[key].barberId = target.dataset.id;
+      UI[key].date = null;
+      UI[key].time = null;
+      UI[key].reserved = false;
       if (key === 'newSel') UI.newStep = 3;
       if (key === 'memberSel') UI.memberStep = 2;
       render();
@@ -809,6 +1128,8 @@ document.addEventListener('click', (e) => {
     case 'pick-date': {
       const key = target.dataset.sel;
       UI[key].date = target.dataset.date;
+      UI[key].time = null;
+      UI[key].reserved = false;
       render();
       break;
     }
@@ -816,6 +1137,7 @@ document.addEventListener('click', (e) => {
     case 'pick-time': {
       const key = target.dataset.sel;
       UI[key].time = target.dataset.time;
+      UI[key].reserved = target.dataset.reserved === '1';
       render();
       break;
     }
@@ -866,18 +1188,21 @@ document.addEventListener('click', (e) => {
       render();
       setTimeout(() => {
         const member = DB.members.find(m => m.id === UI.memberId);
+        const plan = planOf(member);
         const appt = {
           id: DB.nextApptId++,
           clientName: member.name,
           type: 'miembro',
-          serviceName: 'Corte (Plan ' + PLANS[member.plan].label + ')',
+          memberId: member.id,
+          reserved: UI.memberSel.reserved,
+          serviceName: 'Corte (Plan ' + categoryMeta(member.category).label + ' ' + plan.label + ')',
           barberId: UI.memberSel.barberId,
           date: UI.memberSel.date,
           time: UI.memberSel.time,
           status: 'confirmada',
         };
         DB.appointments.push(appt);
-        member.cortesUsados = Math.min(member.cortesUsados + 1, PLANS[member.plan].cortes);
+        member.cortesUsados = Math.min(member.cortesUsados + 1, plan.cortes);
         saveDB(DB);
         UI.confirming = false;
         UI.lastConfirmedCode = 'LM-' + String(appt.id).padStart(4, '0');
@@ -898,10 +1223,49 @@ document.addEventListener('click', (e) => {
       render();
       break;
     }
+
+    case 'toggle-slot-block': {
+      const b = DB.barbers.find(b => b.id === target.dataset.barberId);
+      const time = target.dataset.time;
+      const date = getTodayIso();
+      if (!b.blockedSlots) b.blockedSlots = {};
+      if (!b.blockedSlots[date]) b.blockedSlots[date] = [];
+      const idx = b.blockedSlots[date].indexOf(time);
+      if (idx >= 0) b.blockedSlots[date].splice(idx, 1);
+      else b.blockedSlots[date].push(time);
+      saveDB(DB);
+      render();
+      break;
+    }
+
+    case 'request-cancel-appt':
+      UI.pendingCancelApptId = Number(target.dataset.id);
+      render();
+      break;
+
+    case 'cancel-appt-abort':
+      UI.pendingCancelApptId = null;
+      render();
+      break;
+
+    case 'cancel-appt-confirm': {
+      const id = Number(target.dataset.id);
+      cancelAppointment(id, target.dataset.by);
+      UI.pendingCancelApptId = null;
+      render();
+      break;
+    }
   }
 });
 
 render();
+
+// Refresca vistas de barbero/gerencia cada pocos segundos para reflejar
+// cupos liberados y cuentas regresivas de la ventana de prioridad de miembros.
+// Se excluye la vista de cliente para no interrumpir formularios en curso.
+setInterval(() => {
+  if (UI.main === 'barber' || UI.main === 'manager') render();
+}, 5000);
 </script>
 </body>
 </html>
