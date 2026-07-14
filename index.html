@@ -211,6 +211,11 @@
   </div>
 </div>
 
+<!-- Notificaciones en tiempo real (dentro de la misma sesión / entre pestañas) -->
+<div class="fixed top-3 left-0 right-0 flex justify-center z-[60] pointer-events-none">
+  <div id="toast-stack" class="w-full max-w-md px-4 flex flex-col gap-2"></div>
+</div>
+
 <!-- Floating dev switcher (demo navigation between the 3 core views) -->
 <div class="fixed bottom-0 left-0 right-0 flex justify-center z-50 pointer-events-none">
   <div class="w-full max-w-md pointer-events-auto">
@@ -339,6 +344,8 @@ const MEMBER_RESERVED_SLOTS = ['12:30 PM', '6:30 PM'];
 // antes de abrirse al público en general. Ajustable según lo que necesite el negocio.
 const CANCEL_PRIORITY_WINDOW_MINUTES = 15;
 
+const REJECT_REASONS = ['Sin cupo disponible', 'Conflicto de horario', 'Fuera de mi especialidad', 'Otro motivo'];
+
 function defaultDB() {
   return {
     barbers: [
@@ -386,9 +393,21 @@ let UI = {
   memberSel: { barberId: null, date: null, time: null, reserved: false },
   confirming: false,
   lastConfirmedCode: null,
+  lastConfirmedApptId: null,   // id real de la cita creada, para poder consultar su estado en vivo
+  lastNotifiedApptStatus: null, // evita notificar dos veces el mismo cambio de estado al cliente
   selectedBarberId: 'Sebastian R.',
   pendingCancelApptId: null,
+  rejectDraft: { apptId: null, reason: '' }, // motivo de rechazo que el barbero está eligiendo
+  walkInDraft: { time: null, service: null, name: '' }, // cliente presencial sin cita previa
+  notifiedPendingIds: new Set(), // solicitudes ya notificadas al barbero, para no repetir el toast
 };
+
+function seedNotifiedForBarber(barberId) {
+  DB.appointments
+    .filter(a => a.barberId === barberId && a.status === 'pendiente')
+    .forEach(a => UI.notifiedPendingIds.add(a.id));
+}
+seedNotifiedForBarber(UI.selectedBarberId);
 
 function money(n) {
   return '$' + n.toLocaleString('es-CO');
@@ -441,7 +460,7 @@ function isSlotBlockedByBarber(barberId, date, time) {
 }
 
 function activeApptAt(barberId, date, time) {
-  return DB.appointments.find(a => a.barberId === barberId && a.date === date && a.time === time && a.status === 'confirmada');
+  return DB.appointments.find(a => a.barberId === barberId && a.date === date && a.time === time && (a.status === 'confirmada' || a.status === 'pendiente'));
 }
 
 function lastCancelledAt(barberId, date, time) {
@@ -478,20 +497,44 @@ function isReservedSlotAvailable(barberId, date, time) {
 }
 
 function upcomingApptForMember(memberId) {
-  const list = DB.appointments.filter(a => a.memberId === memberId && a.status === 'confirmada');
+  const list = DB.appointments.filter(a => a.memberId === memberId && (a.status === 'confirmada' || a.status === 'pendiente'));
   if (!list.length) return null;
   return list.sort((a, b) => a.date === b.date ? timeToMinutes(a.time) - timeToMinutes(b.time) : a.date.localeCompare(b.date))[0];
 }
 
 function cancelAppointment(id, canceller) {
   const appt = DB.appointments.find(a => a.id === id);
-  if (!appt || appt.status === 'cancelada') return;
+  if (!appt || appt.status === 'cancelada' || appt.status === 'rechazada') return;
+  const wasConfirmed = appt.status === 'confirmada';
   appt.status = 'cancelada';
   appt.cancelledBy = canceller;
   appt.freedAt = Date.now();
-  if (appt.type === 'miembro' && appt.memberId) {
+  // El crédito solo se descontó si la cita alcanzó a confirmarse; una solicitud
+  // "pendiente" que se cancela nunca tocó el saldo del miembro.
+  if (wasConfirmed && appt.type === 'miembro' && appt.memberId) {
     const m = DB.members.find(x => x.id === appt.memberId);
     if (m) m.cortesUsados = Math.max(0, m.cortesUsados - 1);
+  }
+  saveDB(DB);
+}
+
+// El barbero acepta o rechaza una solicitud pendiente. El crédito de membresía
+// se descuenta recién aquí (al aceptar), nunca al momento de la solicitud —
+// así una cita rechazada jamás le cuesta un corte al cliente.
+function respondToAppointment(id, decision, reason) {
+  const appt = DB.appointments.find(a => a.id === id);
+  if (!appt || appt.status !== 'pendiente') return;
+  appt.status = decision;
+  appt.decidedAt = Date.now();
+  if (decision === 'rechazada') {
+    appt.rejectReason = reason || '';
+  }
+  if (decision === 'confirmada' && appt.type === 'miembro' && appt.memberId) {
+    const m = DB.members.find(x => x.id === appt.memberId);
+    if (m) {
+      const p = planOf(m);
+      m.cortesUsados = Math.min(p.cortes, m.cortesUsados + 1);
+    }
   }
   saveDB(DB);
 }
@@ -514,8 +557,60 @@ function svgIcon(name, cls) {
     coffee: '<path d="M4 21h16"/><path d="M6 3h11v9a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V6a3 3 0 0 1 2-2Z"/>',
     trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
     users: '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M21.5 20c0-2.7-1.7-5-4-6"/>',
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8Z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+    close: '<path d="M18 6 6 18M6 6l12 12"/>',
   };
   return `<svg class="${cls||''}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icons[name]||''}</svg>`;
+}
+
+/* ============================ NOTIFICACIONES ============================ */
+
+function showToast(message, tone) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const toneCls = tone === 'ok' ? 'border-okgreen/50 text-okgreen' : tone === 'warn' ? 'border-ember/50 text-ember' : 'border-accent/50 text-accent';
+  const icon = tone === 'ok' ? 'check' : tone === 'warn' ? 'close' : 'bell';
+  const el = document.createElement('div');
+  el.className = `fade-in pointer-events-auto rounded-xl bg-card2/95 backdrop-blur card-edge border ${toneCls} px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-start gap-2`;
+  el.innerHTML = `<span class="shrink-0 mt-0.5">${svgIcon(icon, 'w-4 h-4')}</span><span class="flex-1 text-xs text-white leading-snug">${message}</span>`;
+  el.addEventListener('click', () => dismissToast(el));
+  stack.appendChild(el);
+  setTimeout(() => dismissToast(el), 5000);
+}
+
+function dismissToast(el) {
+  if (!el || !el.parentNode) return;
+  el.style.transition = 'opacity .2s ease, transform .2s ease';
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(-6px)';
+  setTimeout(() => el.remove(), 200);
+}
+
+// Se llama en cada render(). Es idempotente: solo notifica una vez por evento
+// gracias a UI.notifiedPendingIds (barbero) y UI.lastNotifiedApptStatus (cliente).
+function checkForNotifications() {
+  if (UI.main === 'barber') {
+    DB.appointments
+      .filter(a => a.barberId === UI.selectedBarberId && a.status === 'pendiente')
+      .forEach(a => {
+        if (!UI.notifiedPendingIds.has(a.id)) {
+          UI.notifiedPendingIds.add(a.id);
+          showToast(`<strong>Nueva cita agendada</strong><br/>${a.clientName} · ${formatDateLabel(a.date)} ${a.time}`, 'info');
+        }
+      });
+  }
+
+  if (UI.main === 'client' && UI.lastConfirmedApptId) {
+    const appt = DB.appointments.find(a => a.id === UI.lastConfirmedApptId);
+    if (appt && appt.status !== UI.lastNotifiedApptStatus) {
+      if (appt.status === 'confirmada') {
+        showToast('¡Tu barbero confirmó la cita! Te esperamos.', 'ok');
+      } else if (appt.status === 'rechazada') {
+        showToast('Tu cita no pudo confirmarse' + (appt.rejectReason ? ': ' + appt.rejectReason + '.' : '.'), 'warn');
+      }
+      UI.lastNotifiedApptStatus = appt.status;
+    }
+  }
 }
 
 /* ============================ RENDER ROUTER ============================ */
@@ -524,6 +619,7 @@ let _lastRenderedHtml = '';
 
 function render(opts) {
   opts = opts || {};
+  checkForNotifications();
   const root = document.getElementById('view-container');
   let html = '';
   if (UI.main === 'client') {
@@ -842,14 +938,38 @@ function renderSpinner(msg) {
   </div>`;
 }
 
+function statusHeaderBlock(appt) {
+  if (!appt || appt.status === 'pendiente') {
+    return `
+    <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent relative">
+      <span class="absolute inline-flex h-full w-full rounded-full bg-accent opacity-20 animate-ping"></span>
+      <span class="relative">${svgIcon('clock')}</span>
+    </div>
+    <div class="font-display text-3xl text-white mt-5">SOLICITUD ENVIADA</div>
+    <p class="text-sm text-muted mt-2 max-w-[260px]">Tu barbero está revisando la hora. Te avisamos apenas la confirme.</p>`;
+  }
+  if (appt.status === 'rechazada') {
+    return `
+    <div class="w-16 h-16 rounded-full bg-ember/15 border-2 border-ember flex items-center justify-center text-ember">
+      ${svgIcon('close')}
+    </div>
+    <div class="font-display text-3xl text-white mt-5">NO PUDIMOS CONFIRMARLA</div>
+    <p class="text-sm text-muted mt-2 max-w-[260px]">${appt.rejectReason ? 'Motivo: ' + appt.rejectReason : 'El barbero no pudo tomar esta cita.'}</p>`;
+  }
+  return `
+  <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent">
+    ${svgIcon('check')}
+  </div>
+  <div class="font-display text-3xl text-white mt-5">¡CITA CONFIRMADA!</div>`;
+}
+
 function renderNewClientSuccess() {
+  const appt = DB.appointments.find(a => a.id === UI.lastConfirmedApptId);
+  const status = appt ? appt.status : 'pendiente';
   return `
   <div class="px-5 pt-16 flex flex-col items-center text-center">
-    <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent">
-      ${svgIcon('check')}
-    </div>
-    <div class="font-display text-3xl text-white mt-5">¡CITA CONFIRMADA!</div>
-    <div class="text-sm text-muted mt-2">Código de confirmación</div>
+    ${statusHeaderBlock(appt)}
+    <div class="text-sm text-muted mt-4">Código de referencia</div>
     <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
 
     <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
@@ -858,11 +978,17 @@ function renderNewClientSuccess() {
       ${summaryRow('Fecha', formatDateLabel(UI.newSel.date) + ' · ' + UI.newSel.time)}
     </div>
 
+    ${status === 'confirmada' ? `
     <div class="w-full mt-5 rounded-xl border border-accent/40 bg-accent/10 px-4 py-4 text-left">
       <div class="flex items-center gap-2 text-accent font-display text-lg">${svgIcon('star')} AHORRA EN TU PRÓXIMO CORTE</div>
       <p class="text-xs text-muted mt-1.5 leading-relaxed">Con el Plan Estándar Pro pagas ${money(PLANS.estandar.pro.price)}/mes y tu corte sale a ${money(Math.round(PLANS.estandar.pro.price/PLANS.estandar.pro.cortes))} en vez de ${money(SERVICES.find(s=>s.id===UI.newSel.service)?.price||25000)}.</p>
       <button data-action="go-client-home" class="mt-3 w-full bg-accent text-black font-bold text-xs uppercase tracking-wide rounded-lg py-2.5">Ver planes</button>
     </div>
+    ` : ''}
+
+    ${status === 'rechazada' ? `
+      <button data-action="retry-new-client" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">ELEGIR OTRO HORARIO</button>
+    ` : ''}
 
     <button data-action="go-client-home" class="mt-6 text-xs text-muted underline underline-offset-4">Volver al inicio</button>
   </div>`;
@@ -946,9 +1072,12 @@ function memberBalanceCard(member) {
     <div class="px-5 py-4">
       <div class="flex items-center justify-between">
         <div>
-          <div class="text-[10px] uppercase tracking-[0.2em] text-muted">Próxima cita</div>
+          <div class="text-[10px] uppercase tracking-[0.2em] text-muted">${upcoming.status === 'pendiente' ? 'Solicitud pendiente' : 'Próxima cita'}</div>
           <div class="text-sm font-semibold text-white mt-1">${formatDateLabel(upcoming.date)} · ${upcoming.time}${upcoming.reserved ? ' ⭐' : ''}</div>
           <div class="text-[11px] text-muted">${DB.barbers.find(b=>b.id===upcoming.barberId)?.name || '—'}</div>
+          ${upcoming.status === 'pendiente' ? `
+            <div class="text-[10px] text-accent mt-1 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>Esperando confirmación del barbero</div>
+          ` : ''}
         </div>
         ${UI.pendingCancelApptId === upcoming.id ? `
           <div class="flex flex-col items-end gap-1.5">
@@ -970,27 +1099,37 @@ function memberBalanceCard(member) {
 function renderMemberSuccess() {
   const member = DB.members.find(m => m.id === UI.memberId);
   const plan = planOf(member);
+  const appt = DB.appointments.find(a => a.id === UI.lastConfirmedApptId);
+  const status = appt ? appt.status : 'pendiente';
   const cortesLeft = plan.cortes - member.cortesUsados;
   return `
   <div class="px-5 pt-16 flex flex-col items-center text-center">
-    <div class="w-16 h-16 rounded-full bg-accent/15 border-2 border-accent flex items-center justify-center text-accent">
-      ${svgIcon('check')}
-    </div>
-    <div class="font-display text-3xl text-white mt-5">¡CITA CONFIRMADA!</div>
-    <div class="text-sm text-muted mt-2">Código de confirmación</div>
+    ${statusHeaderBlock(appt)}
+    <div class="text-sm text-muted mt-4">Código de referencia</div>
     <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
 
     <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
       ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.memberSel.barberId)?.name || '—')}
       ${summaryRow('Fecha', formatDateLabel(UI.memberSel.date) + ' · ' + UI.memberSel.time)}
       ${UI.memberSel.reserved ? summaryRow('Tipo de cupo', '⭐ Cupo preferente') : ''}
-      ${summaryRow('Créditos restantes', cortesLeft + '/' + plan.cortes, true)}
+      ${status === 'confirmada' ? summaryRow('Créditos restantes', cortesLeft + '/' + plan.cortes, true) : ''}
     </div>
 
+    ${status === 'confirmada' ? `
     <div class="w-full mt-5 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2 text-left">
       ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
       <span>Se descontó 1 crédito de tu Plan ${categoryMeta(member.category).label} ${plan.label} automáticamente.</span>
     </div>
+    ` : status === 'pendiente' ? `
+    <div class="w-full mt-5 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2 text-left">
+      ${svgIcon('clock', 'shrink-0 mt-0.5 text-accent')}
+      <span>No se descuenta ningún crédito hasta que el barbero confirme la cita.</span>
+    </div>
+    ` : ''}
+
+    ${status === 'rechazada' ? `
+      <button data-action="retry-member-booking" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">ELEGIR OTRO HORARIO</button>
+    ` : ''}
 
     <button data-action="go-client-home" class="mt-6 text-xs text-muted underline underline-offset-4">Volver al inicio</button>
   </div>`;
@@ -1007,11 +1146,21 @@ function renderBarberDashboard() {
 
   const cortesMes = DB.appointments.filter(a => a.barberId === barber.id && a.status === 'confirmada').length;
   const comisiones = cortesMes * barber.commissionPerCut;
+  const pendingCount = DB.appointments.filter(a => a.barberId === barber.id && a.status === 'pendiente').length;
 
   return `
   <div class="px-5 pt-6">
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between gap-2">
       <div class="font-display text-3xl text-white leading-none">PANEL <span class="text-accent">BARBERO</span></div>
+      ${pendingCount > 0 ? `
+        <div class="shrink-0 flex items-center gap-1.5 bg-accent/10 border border-accent/40 text-accent rounded-full px-2.5 py-1.5 text-[10px] font-bold">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+          </span>
+          ${pendingCount}
+        </div>
+      ` : ''}
     </div>
 
     <div class="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -1062,6 +1211,7 @@ function renderBarberDashboard() {
         }).join('')}
       </div>
     </div>
+    ${walkInSection(barber, todayIso)}
     `}
 
     <div class="mt-6 flex items-center justify-between">
@@ -1085,20 +1235,67 @@ function renderBarberDashboard() {
   </div>`;
 }
 
-function appointmentRow(a) {
-  const cancelled = a.status === 'cancelada';
+function walkInSection(barber, todayIso) {
+  const openSlots = TIME_SLOTS.filter(t => !activeApptAt(barber.id, todayIso, t) && !isSlotBlockedByBarber(barber.id, todayIso, t));
   return `
-    <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3 ${cancelled ? 'opacity-50' : ''}">
+  <div class="mt-5">
+    <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-muted mb-2">
+      ${svgIcon('user','w-3.5 h-3.5')} Cliente sin cita — atender ahora
+    </div>
+    ${openSlots.length === 0 ? `
+      <div class="rounded-xl border border-dashed border-edge px-4 py-4 text-center text-xs text-muted">No te quedan horarios libres hoy.</div>
+    ` : `
+      <div class="grid grid-cols-4 gap-2">
+        ${openSlots.map(t => `
+          <button data-action="start-walkin" data-time="${t}" class="rounded-lg border text-[10px] font-semibold py-2 text-center transition-colors ${UI.walkInDraft.time===t ? 'bg-accent text-black border-accent' : 'bg-card border-edge text-white hover:border-accent/60'}">
+            ${t}
+          </button>
+        `).join('')}
+      </div>
+    `}
+    ${UI.walkInDraft.time ? walkInForm(barber, todayIso) : ''}
+  </div>`;
+}
+
+function walkInForm(barber, todayIso) {
+  return `
+  <div class="mt-3 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] text-muted">Ocupando <span class="text-white font-semibold">${UI.walkInDraft.time}</span> con un cliente que llegó al local</div>
+    <input id="input-walkin-name" type="text" placeholder="Nombre (opcional)" value="${UI.walkInDraft.name || ''}" class="w-full rounded-lg px-3 py-2.5 mt-2.5 text-xs" />
+    <div class="text-[10px] uppercase tracking-[0.2em] text-muted mt-3 mb-1.5">Servicio</div>
+    <div class="flex flex-wrap gap-1.5">
+      ${SERVICES.map(s => `
+        <button data-action="pick-walkin-service" data-id="${s.id}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${UI.walkInDraft.service===s.id ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${s.name}</button>
+      `).join('')}
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button data-action="cancel-walkin" class="flex-1 rounded-lg bg-card card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="confirm-walkin" data-barber-id="${barber.id}" data-date="${todayIso}" class="flex-1 rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide py-2 ${!UI.walkInDraft.service ? 'opacity-40 pointer-events-none' : ''}">Confirmar y ocupar</button>
+    </div>
+  </div>`;
+}
+
+function appointmentRow(a) {
+  if (a.status === 'pendiente') return pendingAppointmentRow(a);
+
+  const cancelled = a.status === 'cancelada';
+  const rejected = a.status === 'rechazada';
+  const inactive = cancelled || rejected;
+  return `
+    <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3 ${inactive ? 'opacity-50' : ''}">
       <div class="w-12 text-center shrink-0">
-        <div class="font-mono text-xs font-bold ${cancelled ? 'text-muted line-through' : 'text-accent'}">${a.time}</div>
+        <div class="font-mono text-xs font-bold ${inactive ? 'text-muted line-through' : 'text-accent'}">${a.time}</div>
       </div>
       <div class="w-px h-8 bg-edge"></div>
       <div class="flex-1">
-        <div class="text-sm font-semibold text-white ${cancelled ? 'line-through' : ''}">${a.clientName}</div>
+        <div class="text-sm font-semibold text-white ${inactive ? 'line-through' : ''}">${a.clientName}</div>
         <div class="text-[11px] text-muted">${a.serviceName}${a.reserved ? ' · ⭐ preferente' : ''}</div>
+        ${rejected && a.rejectReason ? `<div class="text-[10px] text-ember mt-0.5 no-underline">Motivo: ${a.rejectReason}</div>` : ''}
       </div>
       ${cancelled ? `
         <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-ember border border-ember/40">Cancelada</div>
+      ` : rejected ? `
+        <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-ember border border-ember/40">Rechazada</div>
       ` : UI.pendingCancelApptId === a.id ? `
         <div class="flex flex-col items-end gap-1">
           <div class="flex gap-1">
@@ -1108,10 +1305,54 @@ function appointmentRow(a) {
         </div>
       ` : `
         <div class="flex flex-col items-end gap-1">
-          <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
-            ${a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
+          <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.walkIn ? 'text-okgreen border border-okgreen/50' : a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
+            ${a.walkIn ? 'Presencial' : a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
           </div>
           <button data-action="request-cancel-appt" data-id="${a.id}" class="text-[9px] text-muted underline underline-offset-2 hover:text-ember">Cancelar</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function pendingAppointmentRow(a) {
+  const inReject = UI.rejectDraft.apptId === a.id;
+  return `
+    <div class="rounded-xl bg-card border-2 border-accent/70 px-4 py-3.5">
+      <div class="flex items-center gap-3">
+        <div class="w-12 text-center shrink-0">
+          <div class="font-mono text-xs font-bold text-accent">${a.time}</div>
+        </div>
+        <div class="w-px h-8 bg-edge"></div>
+        <div class="flex-1">
+          <div class="text-sm font-semibold text-white">${a.clientName}</div>
+          <div class="text-[11px] text-muted">${a.serviceName}${a.reserved ? ' · ⭐ preferente' : ''}</div>
+        </div>
+        <div class="shrink-0 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-accent">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span> Nueva
+        </div>
+      </div>
+
+      ${!inReject ? `
+        <div class="flex gap-2 mt-3">
+          <button data-action="accept-appt" data-id="${a.id}" class="flex-1 rounded-lg bg-okgreen/15 border border-okgreen/50 text-okgreen text-xs font-bold uppercase tracking-wide py-2">Aceptar</button>
+          <button data-action="start-reject" data-id="${a.id}" class="flex-1 rounded-lg bg-ember/10 border border-ember/50 text-ember text-xs font-bold uppercase tracking-wide py-2">Rechazar</button>
+        </div>
+      ` : `
+        <div class="mt-3 pt-3 border-t border-edge">
+          <div class="text-[10px] uppercase tracking-[0.2em] text-muted mb-2">Motivo del rechazo</div>
+          <div class="flex flex-wrap gap-1.5">
+            ${REJECT_REASONS.map(r => `
+              <button data-action="set-reject-reason" data-id="${a.id}" data-reason="${r}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${UI.rejectDraft.reason===r ? 'bg-ember text-white border-ember' : 'bg-card2 text-muted border-edge hover:border-ember/60'}">${r}</button>
+            `).join('')}
+          </div>
+          ${UI.rejectDraft.reason === 'Otro motivo' ? `
+            <input id="input-reject-custom" type="text" placeholder="Escribe el motivo..." class="w-full rounded-lg px-3 py-2 mt-2 text-xs" />
+          ` : ''}
+          <div class="flex gap-2 mt-3">
+            <button data-action="cancel-reject" class="flex-1 rounded-lg bg-card2 card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+            <button data-action="confirm-reject" data-id="${a.id}" class="flex-1 rounded-lg bg-ember text-white text-[11px] font-bold uppercase tracking-wide py-2 ${!UI.rejectDraft.reason ? 'opacity-40 pointer-events-none' : ''}">Confirmar rechazo</button>
+          </div>
         </div>
       `}
     </div>
@@ -1156,6 +1397,30 @@ function renderRecentCancellations() {
 }
 
 
+function renderPendingRequests() {
+  const pending = DB.appointments
+    .filter(a => a.status === 'pendiente')
+    .sort((a,b) => a.date === b.date ? timeToMinutes(a.time) - timeToMinutes(b.time) : a.date.localeCompare(b.date));
+  if (!pending.length) return '';
+  return `
+  <div class="mt-6">
+    <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-accent mb-3">
+      <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span> Solicitudes sin decidir (${pending.length})
+    </div>
+    <div class="space-y-2">
+      ${pending.map(a => `
+        <div class="rounded-xl bg-card border border-accent/40 px-4 py-3 flex items-center justify-between">
+          <div>
+            <div class="text-xs text-white font-semibold">${formatDateLabel(a.date)} · ${a.time} — ${DB.barbers.find(b=>b.id===a.barberId)?.name || '—'}</div>
+            <div class="text-[10px] text-muted mt-0.5">${a.clientName} · ${a.serviceName}</div>
+          </div>
+          <div class="text-[9px] uppercase text-accent font-bold tracking-wide shrink-0 ml-2">Esperando</div>
+        </div>
+      `).join('')}
+    </div>
+  </div>`;
+}
+
 function renderManagerPanel() {
   const ingresosProyectados = DB.members.reduce((sum, m) => sum + planOf(m).price, 0);
   const planCounts = {};
@@ -1188,6 +1453,8 @@ function renderManagerPanel() {
         </div>
       </div>
     </div>
+
+    ${renderPendingRequests()}
 
     <div class="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted">Control de créditos por afiliado</div>
     <div class="mt-3 space-y-2.5">
@@ -1234,6 +1501,7 @@ document.addEventListener('click', (e) => {
     case 'switch-main':
       UI.main = target.dataset.view;
       if (UI.main === 'client') { UI.clientMode = 'home'; }
+      if (UI.main === 'barber') { seedNotifiedForBarber(UI.selectedBarberId); }
       render();
       break;
 
@@ -1245,6 +1513,8 @@ document.addEventListener('click', (e) => {
       UI.memberStep = 1;
       UI.memberSel = { barberId: null, date: null, time: null };
       UI.lastConfirmedCode = null;
+      UI.lastConfirmedApptId = null;
+      UI.lastNotifiedApptStatus = null;
       render();
       break;
 
@@ -1320,12 +1590,14 @@ document.addEventListener('click', (e) => {
           barberId: UI.newSel.barberId,
           date: UI.newSel.date,
           time: UI.newSel.time,
-          status: 'confirmada',
+          status: 'pendiente',
         };
         DB.appointments.push(appt);
         saveDB(DB);
         UI.confirming = false;
         UI.lastConfirmedCode = 'LM-' + String(appt.id).padStart(4, '0');
+        UI.lastConfirmedApptId = appt.id;
+        UI.lastNotifiedApptStatus = 'pendiente';
         render();
       }, 1100);
       break;
@@ -1353,13 +1625,14 @@ document.addEventListener('click', (e) => {
           barberId: UI.memberSel.barberId,
           date: UI.memberSel.date,
           time: UI.memberSel.time,
-          status: 'confirmada',
+          status: 'pendiente',
         };
         DB.appointments.push(appt);
-        member.cortesUsados = Math.min(member.cortesUsados + 1, plan.cortes);
         saveDB(DB);
         UI.confirming = false;
         UI.lastConfirmedCode = 'LM-' + String(appt.id).padStart(4, '0');
+        UI.lastConfirmedApptId = appt.id;
+        UI.lastNotifiedApptStatus = 'pendiente';
         render();
       }, 1100);
       break;
@@ -1367,6 +1640,7 @@ document.addEventListener('click', (e) => {
 
     case 'select-barber':
       UI.selectedBarberId = target.dataset.id;
+      seedNotifiedForBarber(UI.selectedBarberId);
       render();
       break;
 
@@ -1392,6 +1666,43 @@ document.addEventListener('click', (e) => {
       break;
     }
 
+    case 'start-walkin':
+      UI.walkInDraft = { time: target.dataset.time, service: null, name: '' };
+      render();
+      break;
+
+    case 'pick-walkin-service':
+      UI.walkInDraft.service = target.dataset.id;
+      render();
+      break;
+
+    case 'cancel-walkin':
+      UI.walkInDraft = { time: null, service: null, name: '' };
+      render();
+      break;
+
+    case 'confirm-walkin': {
+      const nameEl = document.getElementById('input-walkin-name');
+      const svc = SERVICES.find(s => s.id === UI.walkInDraft.service);
+      const appt = {
+        id: DB.nextApptId++,
+        clientName: (nameEl && nameEl.value.trim()) || 'Cliente presencial',
+        type: 'nuevo',
+        walkIn: true,
+        serviceName: svc ? svc.name : '',
+        barberId: target.dataset.barberId,
+        date: target.dataset.date,
+        time: UI.walkInDraft.time,
+        status: 'confirmada',
+      };
+      DB.appointments.push(appt);
+      saveDB(DB);
+      showToast('Cliente presencial agendado a las ' + appt.time + '.', 'ok');
+      UI.walkInDraft = { time: null, service: null, name: '' };
+      render();
+      break;
+    }
+
     case 'request-cancel-appt':
       UI.pendingCancelApptId = Number(target.dataset.id);
       render();
@@ -1409,6 +1720,58 @@ document.addEventListener('click', (e) => {
       render();
       break;
     }
+
+    case 'accept-appt': {
+      const id = Number(target.dataset.id);
+      respondToAppointment(id, 'confirmada');
+      render();
+      break;
+    }
+
+    case 'start-reject':
+      UI.rejectDraft = { apptId: Number(target.dataset.id), reason: '' };
+      render();
+      break;
+
+    case 'cancel-reject':
+      UI.rejectDraft = { apptId: null, reason: '' };
+      render();
+      break;
+
+    case 'set-reject-reason':
+      UI.rejectDraft.reason = target.dataset.reason;
+      render();
+      break;
+
+    case 'confirm-reject': {
+      const id = Number(target.dataset.id);
+      let reason = UI.rejectDraft.reason;
+      if (reason === 'Otro motivo') {
+        const custom = document.getElementById('input-reject-custom');
+        reason = (custom && custom.value.trim()) || 'Otro motivo';
+      }
+      respondToAppointment(id, 'rechazada', reason);
+      UI.rejectDraft = { apptId: null, reason: '' };
+      render();
+      break;
+    }
+
+    case 'retry-new-client':
+      UI.lastConfirmedCode = null;
+      UI.lastConfirmedApptId = null;
+      UI.newStep = 3;
+      UI.newSel.date = null;
+      UI.newSel.time = null;
+      render();
+      break;
+
+    case 'retry-member-booking':
+      UI.lastConfirmedCode = null;
+      UI.lastConfirmedApptId = null;
+      UI.memberStep = 1;
+      UI.memberSel = { barberId: null, date: null, time: null, reserved: false };
+      render();
+      break;
   }
 });
 
@@ -1416,9 +1779,15 @@ render();
 
 // Refresca vistas de barbero/gerencia cada pocos segundos para reflejar
 // cupos liberados y cuentas regresivas de la ventana de prioridad de miembros.
-// Se excluye la vista de cliente para no interrumpir formularios en curso.
+// También refresca la pantalla de espera del cliente (tras agendar) para que
+// vea en vivo si el barbero ya aceptó o rechazó su solicitud — sin tocar
+// ningún formulario en curso, que es lo único que sí queremos evitar interrumpir.
 setInterval(() => {
-  if (UI.main === 'barber' || UI.main === 'manager') render({ silent: true, skipIfUnchanged: true });
+  if (UI.main === 'barber' || UI.main === 'manager') {
+    render({ silent: true, skipIfUnchanged: true });
+  } else if (UI.main === 'client' && UI.lastConfirmedApptId) {
+    render({ silent: true, skipIfUnchanged: true });
+  }
 }, 5000);
 </script>
 <script>
