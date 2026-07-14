@@ -398,7 +398,10 @@ let UI = {
   selectedBarberId: 'Sebastian R.',
   pendingCancelApptId: null,
   rejectDraft: { apptId: null, reason: '' }, // motivo de rechazo que el barbero está eligiendo
+<<<<<<< HEAD
   walkInDraft: { time: null, service: null, name: '' }, // cliente presencial sin cita previa
+=======
+>>>>>>> 2d81f7f6f85634818bf947fd5e90622c2b7a4d11
   notifiedPendingIds: new Set(), // solicitudes ya notificadas al barbero, para no repetir el toast
 };
 
@@ -1235,6 +1238,7 @@ function renderBarberDashboard() {
   </div>`;
 }
 
+<<<<<<< HEAD
 function walkInSection(barber, todayIso) {
   const openSlots = TIME_SLOTS.filter(t => !activeApptAt(barber.id, todayIso, t) && !isSlotBlockedByBarber(barber.id, todayIso, t));
   return `
@@ -1282,6 +1286,15 @@ function appointmentRow(a) {
   const rejected = a.status === 'rechazada';
   const inactive = cancelled || rejected;
   return `
+=======
+function appointmentRow(a) {
+  if (a.status === 'pendiente') return pendingAppointmentRow(a);
+
+  const cancelled = a.status === 'cancelada';
+  const rejected = a.status === 'rechazada';
+  const inactive = cancelled || rejected;
+  return `
+>>>>>>> 2d81f7f6f85634818bf947fd5e90622c2b7a4d11
     <div class="rounded-xl bg-card card-edge px-4 py-3 flex items-center gap-3 ${inactive ? 'opacity-50' : ''}">
       <div class="w-12 text-center shrink-0">
         <div class="font-mono text-xs font-bold ${inactive ? 'text-muted line-through' : 'text-accent'}">${a.time}</div>
