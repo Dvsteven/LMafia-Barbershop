@@ -826,7 +826,7 @@ function stepPickLocation() {
   return `
   <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">1. Elige tu sede</div>
   <div class="grid grid-cols-1 gap-2.5">
-    ${LOCATIONS.map(l => `
+    ${DB.locations.map(l => `
       <button data-action="pick-location" data-id="${l.id}" class="w-full text-left bg-card card-edge hover:border-accent/60 rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors ${UI.newSel.locationId===l.id ? 'border-accent' : ''}">
         <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent shrink-0">${svgIcon('pin')}</div>
         <div class="flex-1">
