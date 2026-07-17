@@ -33,6 +33,10 @@
 <!-- Favicon y manifest -->
 <link rel="icon" type="image/png" href="assets/images/favicon.png">
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/images/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="La Mafia">
+<meta name="mobile-web-app-capable" content="yes">
 
 <!-- Open Graph -->
 <meta property="og:title" content="La Mafia Barbería | Barbería en Pereira y Dosquebradas">
@@ -216,10 +220,25 @@
   <div id="toast-stack" class="w-full max-w-md px-4 flex flex-col gap-2"></div>
 </div>
 
-<!-- Floating dev switcher (demo navigation between the 3 core views) -->
+<!-- Floating dev switcher (demo navigation between the 3 core views) + banner de instalación -->
 <div class="fixed bottom-0 left-0 right-0 flex justify-center z-50 pointer-events-none">
-  <div class="w-full max-w-md pointer-events-auto">
-    <div class="mx-3 mb-3 rounded-2xl bg-card2/95 backdrop-blur card-edge shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex overflow-hidden">
+  <div class="w-full max-w-md pointer-events-none flex flex-col gap-2 px-3 pb-3">
+
+    <div id="install-banner" class="hidden pointer-events-auto rounded-2xl bg-card2/95 backdrop-blur card-edge shadow-[0_10px_40px_rgba(0,0,0,0.6)] px-4 py-3.5 items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-accent/15 border border-accent/40 flex items-center justify-center text-accent shrink-0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div id="install-banner-title" class="text-xs font-bold text-white leading-tight">Instala La Mafia</div>
+        <div id="install-banner-text" class="text-[11px] text-muted leading-snug mt-0.5">Acceso directo desde tu pantalla de inicio, sin buscarlo en el navegador.</div>
+      </div>
+      <div class="flex flex-col gap-1.5 shrink-0 items-stretch">
+        <button id="install-banner-action" type="button" class="bg-accent text-black text-[10px] font-bold uppercase tracking-wide rounded-lg px-3 py-1.5 whitespace-nowrap">Instalar</button>
+        <button id="install-banner-dismiss" type="button" class="text-muted text-[10px] uppercase tracking-wide">Ahora no</button>
+      </div>
+    </div>
+
+    <div class="pointer-events-auto rounded-2xl bg-card2/95 backdrop-blur card-edge shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex overflow-hidden">
       <button data-action="switch-main" data-view="client" class="dev-tab flex-1 flex flex-col items-center gap-1 py-3 text-[11px] font-bold uppercase tracking-wide transition-colors">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5Z"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         Cliente
@@ -235,6 +254,7 @@
         Gerencia
       </button>
     </div>
+
   </div>
 </div>
 
@@ -288,6 +308,87 @@
 
 <script>
 /* ============================================================
+   Instalación real de la PWA — usa beforeinstallprompt (Android/
+   Chrome/Edge) para disparar el diálogo NATIVO del sistema, y
+   muestra instrucciones manuales en iOS (Safari no tiene ese
+   evento; ahí es imposible disparar un diálogo programático).
+   ============================================================ */
+(function () {
+  const DISMISS_KEY = 'lamafia_install_dismissed';
+  const banner = document.getElementById('install-banner');
+  const titleEl = document.getElementById('install-banner-title');
+  const textEl = document.getElementById('install-banner-text');
+  const actionBtn = document.getElementById('install-banner-action');
+  const dismissBtn = document.getElementById('install-banner-dismiss');
+  if (!banner || !actionBtn || !dismissBtn) return;
+
+  function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function showBanner() {
+    if (isStandalone() || localStorage.getItem(DISMISS_KEY) === '1') return;
+    banner.classList.remove('hidden');
+    banner.classList.add('flex');
+  }
+
+  function hideBanner() {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }
+
+  dismissBtn.addEventListener('click', () => {
+    localStorage.setItem(DISMISS_KEY, '1');
+    hideBanner();
+  });
+
+  let deferredPrompt = null;
+
+  // Chrome/Edge/Android: el navegador nos avisa que la app cumple los
+  // requisitos de instalación y nos da el evento para disparar el diálogo
+  // real cuando el usuario lo pida (no automáticamente).
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    titleEl.textContent = 'Instala La Mafia';
+    textEl.textContent = 'Acceso directo desde tu pantalla de inicio, sin buscarlo en el navegador.';
+    actionBtn.textContent = 'Instalar';
+    actionBtn.onclick = async () => {
+      hideBanner();
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt(); // <- diálogo nativo real del sistema operativo
+      const choice = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (choice.outcome !== 'accepted') {
+        localStorage.setItem(DISMISS_KEY, '1');
+      }
+    };
+    showBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    hideBanner();
+    localStorage.setItem(DISMISS_KEY, '1');
+  });
+
+  const ua = window.navigator.userAgent || '';
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+  if (isIOS && isSafari && !isStandalone()) {
+    titleEl.textContent = 'Instala La Mafia';
+    textEl.textContent = 'Toca Compartir (□↑) y luego "Añadir a pantalla de inicio".';
+    actionBtn.textContent = 'Entendido';
+    actionBtn.onclick = () => {
+      localStorage.setItem(DISMISS_KEY, '1');
+      hideBanner();
+    };
+    showBanner();
+  }
+})();
+</script>
+
+<script>
+/* ============================================================
    LA MAFIA — Lazy Landing demo
    Estado persistido en localStorage para intercomunicar las
    vistas de Cliente, Barbero y Gerencia en tiempo real.
@@ -334,7 +435,28 @@ function categoryMeta(category) {
   return CATEGORY_META[category];
 }
 
-const TIME_SLOTS = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM'];
+// Sedes físicas de la barbería. Cada barbero y cada miembro pertenece a una sola sede.
+// Viven dentro de DB (DB.locations) para que Gerencia pueda crear/editar/eliminar sedes.
+function defaultLocations() {
+  return [
+    { id: 'rocio',        name: 'El Rocío Alto', city: 'Pereira',      address: 'Calle 21, El Rocío Alto #19-32' },
+    { id: 'dosquebradas', name: 'Centro',        city: 'Dosquebradas', address: 'Calle 17 - Carrera 21 #20-43' },
+  ];
+}
+
+function locationById(id) {
+  return DB.locations.find(l => l.id === id);
+}
+function locationLabel(id) {
+  const l = locationById(id);
+  return l ? l.name + ' · ' + l.city : '—';
+}
+
+// Franjas horarias públicas de atención. También viven en DB (DB.timeSlots) para que
+// Gerencia pueda agregar/quitar horas sin tocar código.
+function defaultTimeSlots() {
+  return ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM'];
+}
 
 // Cupos extra fuera de la grilla pública — invisibles al público, siempre disponibles
 // para miembros (mientras no los tome otro miembro), sin chocar nunca con la agenda pública.
@@ -348,26 +470,54 @@ const REJECT_REASONS = ['Sin cupo disponible', 'Conflicto de horario', 'Fuera de
 
 function defaultDB() {
   return {
+    locations: defaultLocations(),
+    nextLocationId: 3,
+    timeSlots: defaultTimeSlots(),
     barbers: [
-      { id: 'Sebastian R.', name: 'Sebastian R.', role: 'Barbero Senior', restDay: false, commissionPerCut: 12000, blockedSlots: {} },
-      { id: 'mateo',  name: 'Mateo R.',  role: 'Especialista en Fade', restDay: false, commissionPerCut: 12000, blockedSlots: {} },
-      { id: 'andres', name: 'Andrés G.', role: 'Barbero Junior', restDay: false, commissionPerCut: 9000, blockedSlots: {} },
+      { id: 'Sebastian R.', name: 'Sebastian R.', role: 'Barbero Senior', locationId: 'rocio',        restDay: false, commissionPerCut: 12000, blockedSlots: {} },
+      { id: 'mateo',  name: 'Mateo R.',  role: 'Especialista en Fade', locationId: 'dosquebradas', restDay: false, commissionPerCut: 12000, blockedSlots: {} },
+      { id: 'andres', name: 'Andrés G.', role: 'Barbero Junior',       locationId: 'rocio',        restDay: false, commissionPerCut: 9000, blockedSlots: {} },
     ],
+    nextBarberId: 1,
+    // locationId: sede asignada del miembro. En el sistema completo esto se define una sola
+    // vez al registrarse (con membresía), y sirve para filtrar automáticamente su agenda.
     members: [
-      { id: 'juan',    name: 'Juan Pérez',   phone: '300 111 2233', category: 'premium',  tier: 'vip',  cortesUsados: 1, extrasUsados: 2 },
-      { id: 'andrea',  name: 'Andrea Gómez', phone: '311 222 3344', category: 'premium',  tier: 'pro',  cortesUsados: 3, extrasUsados: 1 },
-      { id: 'felipe',  name: 'Felipe Ruiz',  phone: '320 333 4455', category: 'estandar', tier: 'base', cortesUsados: 0, extrasUsados: 0 },
+      { id: 'juan',    name: 'Juan Pérez',   phone: '300 111 2233', locationId: 'rocio',        category: 'premium',  tier: 'vip',  cortesUsados: 1, extrasUsados: 2 },
+      { id: 'andrea',  name: 'Andrea Gómez', phone: '311 222 3344', locationId: 'dosquebradas', category: 'premium',  tier: 'pro',  cortesUsados: 3, extrasUsados: 1 },
+      { id: 'felipe',  name: 'Felipe Ruiz',  phone: '320 333 4455', locationId: 'rocio',        category: 'estandar', tier: 'base', cortesUsados: 0, extrasUsados: 0 },
     ],
+    nextMemberId: 1,
     appointments: [],
     nextApptId: 1,
   };
+}
+
+// Actualiza en el sitio cualquier DB guardada con una forma anterior (p. ej. sin sedes,
+// horario editable o contadores de ID), para que las cuentas ya existentes en localStorage
+// no se rompan al cargar esta versión.
+function migrateDB(db) {
+  if (!Array.isArray(db.locations) || db.locations.length === 0) db.locations = defaultLocations();
+  if (!db.nextLocationId) db.nextLocationId = db.locations.length + 1;
+  if (!Array.isArray(db.timeSlots) || db.timeSlots.length === 0) db.timeSlots = defaultTimeSlots();
+  if (!db.nextBarberId) db.nextBarberId = 1;
+  if (!db.nextMemberId) db.nextMemberId = 1;
+  const fallbackLocationId = db.locations[0] ? db.locations[0].id : null;
+  (db.barbers || []).forEach(b => {
+    if (!b.locationId) b.locationId = fallbackLocationId;
+    if (b.commissionPerCut == null) b.commissionPerCut = 10000;
+    if (!b.blockedSlots) b.blockedSlots = {};
+  });
+  (db.members || []).forEach(m => {
+    if (!m.locationId) m.locationId = fallbackLocationId;
+  });
+  return db;
 }
 
 function loadDB() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) { const db = defaultDB(); saveDB(db); return db; }
-    return JSON.parse(raw);
+    return migrateDB(JSON.parse(raw));
   } catch (e) {
     const db = defaultDB(); saveDB(db); return db;
   }
@@ -387,7 +537,7 @@ let UI = {
   main: 'client',            // 'client' | 'barber' | 'manager'
   clientMode: 'home',        // 'home' | 'new' | 'member'
   newStep: 1,
-  newSel: { service: null, barberId: null, date: null, time: null, reserved: false, name: '', phone: '' },
+  newSel: { locationId: null, service: null, barberId: null, date: null, time: null, reserved: false, name: '', phone: '' },
   memberId: null,
   memberStep: 1,
   memberSel: { barberId: null, date: null, time: null, reserved: false },
@@ -398,7 +548,16 @@ let UI = {
   selectedBarberId: 'Sebastian R.',
   pendingCancelApptId: null,
   rejectDraft: { apptId: null, reason: '' }, // motivo de rechazo que el barbero está eligiendo
+  walkInDraft: { time: null, service: null, name: '' }, // cliente presencial sin cita previa
   notifiedPendingIds: new Set(), // solicitudes ya notificadas al barbero, para no repetir el toast
+
+  // ---- Gerencia: gestión (CRUD) ----
+  managerTab: 'resumen', // 'resumen' | 'barberos' | 'sedes' | 'miembros' | 'horario'
+  barberDraft: null,     // { id: null|string, name, role, commission, locationId } — null = formulario cerrado
+  locationDraft: null,   // { id: null|string, name, city, address }
+  memberDraft: null,     // { id: null|string, name, phone, category, tier, locationId }
+  newTimeSlotValue: '',  // valor del input para agregar una nueva franja horaria
+  pendingDelete: null,   // { type: 'barber'|'location'|'member', id } — confirmación inline de borrado
 };
 
 function seedNotifiedForBarber(barberId) {
@@ -558,6 +717,10 @@ function svgIcon(name, cls) {
     users: '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M21.5 20c0-2.7-1.7-5-4-6"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8Z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',
+    pin: '<path d="M12 22s7-7.4 7-12a7 7 0 1 0-14 0c0 4.6 7 12 7 12Z"/><circle cx="12" cy="10" r="2.6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   };
   return `<svg class="${cls||''}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icons[name]||''}</svg>`;
 }
@@ -663,7 +826,7 @@ function renderClientHome() {
       <div class="font-display text-4xl text-white leading-none">LA <span class="text-accent">MAFIA</span></div>
       <div class="w-9 h-9 rounded-full bg-card2 card-edge flex items-center justify-center text-accent">${svgIcon('scissors')}</div>
     </div>
-    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">Barbería · Pereira</div>
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">Barbería · Pereira y Dosquebradas</div>
 
     <div class="mt-6 rounded-2xl overflow-hidden card-edge relative">
       <div class="pole-stripe h-1.5 w-full"></div>
@@ -750,12 +913,29 @@ function renderNewClientFlow() {
   return `
   <div class="px-5 pt-6">
     ${flowHeader('CLIENTE NUEVO', () => {}, 'go-client-home')}
-    ${stepDots(step, 4)}
+    ${stepDots(step, 5)}
 
-    ${step === 1 ? stepPickService() : ''}
-    ${step === 2 ? stepPickBarber('newSel') : ''}
-    ${step === 3 ? stepPickDateTime('newSel') : ''}
-    ${step === 4 ? stepBasicData() : ''}
+    ${step === 1 ? stepPickLocation() : ''}
+    ${step === 2 ? stepPickService() : ''}
+    ${step === 3 ? stepPickBarber('newSel') : ''}
+    ${step === 4 ? stepPickDateTime('newSel') : ''}
+    ${step === 5 ? stepBasicData() : ''}
+  </div>`;
+}
+
+function stepPickLocation() {
+  return `
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">1. Elige tu sede</div>
+  <div class="grid grid-cols-1 gap-2.5">
+    ${DB.locations.map(l => `
+      <button data-action="pick-location" data-id="${l.id}" class="w-full text-left bg-card card-edge hover:border-accent/60 rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors ${UI.newSel.locationId===l.id ? 'border-accent' : ''}">
+        <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent shrink-0">${svgIcon('pin')}</div>
+        <div class="flex-1">
+          <div class="font-semibold text-white text-sm">${l.name}</div>
+          <div class="text-[11px] text-muted mt-0.5">${l.city} · ${l.address}</div>
+        </div>
+      </button>
+    `).join('')}
   </div>`;
 }
 
@@ -794,10 +974,16 @@ function stepPickService() {
 }
 
 function stepPickBarber(selKey) {
+  // El cliente nuevo ya eligió sede; el miembro tiene su sede asignada desde el registro.
+  const locationId = selKey === 'newSel'
+    ? UI.newSel.locationId
+    : (DB.members.find(m => m.id === UI.memberId) || {}).locationId;
+  const barbers = DB.barbers.filter(b => b.locationId === locationId);
+
   return `
-  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${selKey==='newSel'?'2':'1'}. Elige tu barbero</div>
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${selKey==='newSel'?'3':'1'}. Elige tu barbero${locationId ? ` <span class="text-white/70 normal-case font-normal">· ${locationLabel(locationId)}</span>` : ''}</div>
   <div class="grid grid-cols-1 gap-2.5">
-    ${DB.barbers.map(b => `
+    ${barbers.map(b => `
       <button data-action="pick-barber" data-sel="${selKey}" data-id="${b.id}" ${b.restDay ? 'disabled' : ''}
         class="w-full text-left bg-card card-edge rounded-xl px-4 py-3.5 flex items-center gap-3 transition-colors ${b.restDay ? 'opacity-40 cursor-not-allowed' : 'hover:border-accent/60'} ${UI[selKey].barberId===b.id ? 'border-accent' : ''}">
         <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent font-display text-lg">${b.name.charAt(0)}</div>
@@ -818,7 +1004,7 @@ function stepPickDateTime(selKey) {
 
   let gridHtml = '';
   if (!isMember) {
-    const openSlots = sel.date ? TIME_SLOTS.filter(t => isSlotAvailableForPublic(sel.barberId, sel.date, t)) : TIME_SLOTS;
+    const openSlots = sel.date ? DB.timeSlots.filter(t => isSlotAvailableForPublic(sel.barberId, sel.date, t)) : DB.timeSlots;
     gridHtml = sel.date && openSlots.length === 0 ? `
       <div class="mt-5 rounded-xl border border-dashed border-edge px-4 py-6 text-center text-xs text-muted">
         No hay horarios disponibles con este barbero para esta fecha.<br/>Prueba otra fecha, otro barbero, o pregunta por nuestras membresías.
@@ -829,7 +1015,7 @@ function stepPickDateTime(selKey) {
   } else {
     gridHtml = `
       <div class="grid grid-cols-3 gap-2 mt-5">
-        ${TIME_SLOTS.map(t => {
+        ${DB.timeSlots.map(t => {
           const avail = sel.date ? isSlotAvailableForMember(sel.barberId, sel.date, t) : true;
           return timeChip(selKey, t, false, !avail);
         }).join('')}
@@ -848,7 +1034,7 @@ function stepPickDateTime(selKey) {
   }
 
   return `
-  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${isMember ? '2' : '3'}. Fecha y hora</div>
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">${isMember ? '2' : '4'}. Fecha y hora</div>
   <div class="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
     ${dates.map(d => `
       <button data-action="pick-date" data-sel="${selKey}" data-date="${d.iso}" class="shrink-0 w-16 rounded-xl card-edge py-2.5 text-center transition-colors ${sel.date===d.iso ? 'bg-accent text-black border-accent' : 'bg-card text-white hover:border-accent/60'}">
@@ -862,7 +1048,7 @@ function stepPickDateTime(selKey) {
   ${gridHtml}
 
   ${sel.date && sel.time ? `
-    <button data-action="${isMember ? 'member-confirm' : 'to-step-4'}" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
+    <button data-action="${isMember ? 'member-confirm' : 'to-step-5'}" class="glow-btn w-full mt-6 bg-accent text-black font-display text-xl tracking-wide rounded-xl py-4">
       ${isMember ? 'CONFIRMAR CITA' : 'CONTINUAR'}
     </button>
   ` : ''}
@@ -890,7 +1076,7 @@ function timeChip(selKey, time, reserved, disabled) {
 
 function stepBasicData() {
   return `
-  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">4. Tus datos</div>
+  <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-3">5. Tus datos</div>
   <div class="space-y-3">
     <div>
       <label class="text-[11px] text-muted">Nombre completo</label>
@@ -904,6 +1090,7 @@ function stepBasicData() {
 
   <div class="mt-5 rounded-xl bg-card2 card-edge px-4 py-3.5">
     <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Resumen</div>
+    ${summaryRow('Sede', locationLabel(UI.newSel.locationId))}
     ${summaryRow('Servicio', SERVICES.find(s=>s.id===UI.newSel.service)?.name || '—')}
     ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.newSel.barberId)?.name || '—')}
     ${summaryRow('Fecha', formatDateLabel(UI.newSel.date) + ' · ' + UI.newSel.time)}
@@ -972,6 +1159,7 @@ function renderNewClientSuccess() {
     <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
 
     <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
+      ${summaryRow('Sede', locationLabel(UI.newSel.locationId))}
       ${summaryRow('Servicio', SERVICES.find(s=>s.id===UI.newSel.service)?.name || '—')}
       ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.newSel.barberId)?.name || '—')}
       ${summaryRow('Fecha', formatDateLabel(UI.newSel.date) + ' · ' + UI.newSel.time)}
@@ -1046,6 +1234,7 @@ function memberBalanceCard(member) {
       <div>
         <div class="text-[11px] text-muted">¡Bienvenido de nuevo!</div>
         <div class="font-display text-xl text-white leading-tight">${member.name.toUpperCase()}</div>
+        <div class="text-[11px] text-muted flex items-center gap-1 mt-0.5">${svgIcon('pin', 'w-3 h-3 shrink-0')} Tu sede: ${locationLabel(member.locationId)}</div>
       </div>
       <div class="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style="color:${meta.color}; border:1px solid ${meta.color}">${meta.icon} ${meta.label} ${plan.label}</div>
     </div>
@@ -1108,6 +1297,7 @@ function renderMemberSuccess() {
     <div class="font-mono text-2xl text-accent font-bold mt-1 tracking-wider">${UI.lastConfirmedCode}</div>
 
     <div class="w-full rounded-xl bg-card2 card-edge px-4 py-3.5 mt-6 text-left">
+      ${summaryRow('Sede', locationLabel(member.locationId))}
       ${summaryRow('Barbero', DB.barbers.find(b=>b.id===UI.memberSel.barberId)?.name || '—')}
       ${summaryRow('Fecha', formatDateLabel(UI.memberSel.date) + ' · ' + UI.memberSel.time)}
       ${UI.memberSel.reserved ? summaryRow('Tipo de cupo', '⭐ Cupo preferente') : ''}
@@ -1169,6 +1359,7 @@ function renderBarberDashboard() {
         </button>
       `).join('')}
     </div>
+    <div class="text-[11px] text-muted flex items-center gap-1 mt-2">${svgIcon('pin', 'w-3 h-3 shrink-0')} Sede: ${locationLabel(barber.locationId)}</div>
 
     <div class="grid grid-cols-2 gap-3 mt-5">
       <div class="rounded-xl bg-card card-edge px-4 py-3.5">
@@ -1198,7 +1389,7 @@ function renderBarberDashboard() {
     <div class="mt-3">
       <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Bloquear horas sueltas de hoy</div>
       <div class="grid grid-cols-4 gap-2">
-        ${TIME_SLOTS.map(t => {
+        ${DB.timeSlots.map(t => {
           const occupied = !!activeApptAt(barber.id, todayIso, t);
           const blocked = isSlotBlockedByBarber(barber.id, todayIso, t) && !occupied;
           if (occupied) {
@@ -1210,6 +1401,7 @@ function renderBarberDashboard() {
         }).join('')}
       </div>
     </div>
+    ${walkInSection(barber, todayIso)}
     `}
 
     <div class="mt-6 flex items-center justify-between">
@@ -1230,6 +1422,46 @@ function renderBarberDashboard() {
         ${appts.map(a => appointmentRow(a)).join('')}
       </div>
     `}
+  </div>`;
+}
+
+function walkInSection(barber, todayIso) {
+  const openSlots = DB.timeSlots.filter(t => !activeApptAt(barber.id, todayIso, t) && !isSlotBlockedByBarber(barber.id, todayIso, t));
+  return `
+  <div class="mt-5">
+    <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-muted mb-2">
+      ${svgIcon('user','w-3.5 h-3.5')} Cliente sin cita — atender ahora
+    </div>
+    ${openSlots.length === 0 ? `
+      <div class="rounded-xl border border-dashed border-edge px-4 py-4 text-center text-xs text-muted">No te quedan horarios libres hoy.</div>
+    ` : `
+      <div class="grid grid-cols-4 gap-2">
+        ${openSlots.map(t => `
+          <button data-action="start-walkin" data-time="${t}" class="rounded-lg border text-[10px] font-semibold py-2 text-center transition-colors ${UI.walkInDraft.time===t ? 'bg-accent text-black border-accent' : 'bg-card border-edge text-white hover:border-accent/60'}">
+            ${t}
+          </button>
+        `).join('')}
+      </div>
+    `}
+    ${UI.walkInDraft.time ? walkInForm(barber, todayIso) : ''}
+  </div>`;
+}
+
+function walkInForm(barber, todayIso) {
+  return `
+  <div class="mt-3 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] text-muted">Ocupando <span class="text-white font-semibold">${UI.walkInDraft.time}</span> con un cliente que llegó al local</div>
+    <input id="input-walkin-name" type="text" placeholder="Nombre (opcional)" value="${UI.walkInDraft.name || ''}" class="w-full rounded-lg px-3 py-2.5 mt-2.5 text-xs" />
+    <div class="text-[10px] uppercase tracking-[0.2em] text-muted mt-3 mb-1.5">Servicio</div>
+    <div class="flex flex-wrap gap-1.5">
+      ${SERVICES.map(s => `
+        <button data-action="pick-walkin-service" data-id="${s.id}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${UI.walkInDraft.service===s.id ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${s.name}</button>
+      `).join('')}
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button data-action="cancel-walkin" class="flex-1 rounded-lg bg-card card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="confirm-walkin" data-barber-id="${barber.id}" data-date="${todayIso}" class="flex-1 rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide py-2 ${!UI.walkInDraft.service ? 'opacity-40 pointer-events-none' : ''}">Confirmar y ocupar</button>
+    </div>
   </div>`;
 }
 
@@ -1263,8 +1495,8 @@ function appointmentRow(a) {
         </div>
       ` : `
         <div class="flex flex-col items-end gap-1">
-          <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
-            ${a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
+          <div class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${a.walkIn ? 'text-okgreen border border-okgreen/50' : a.type==='miembro' ? 'text-accent border border-accent/50' : 'text-muted border border-edge'}">
+            ${a.walkIn ? 'Presencial' : a.type === 'miembro' ? 'Miembro' : 'Nuevo'}
           </div>
           <button data-action="request-cancel-appt" data-id="${a.id}" class="text-[9px] text-muted underline underline-offset-2 hover:text-ember">Cancelar</button>
         </div>
@@ -1379,7 +1611,53 @@ function renderPendingRequests() {
   </div>`;
 }
 
+function managerTabBar() {
+  const tabs = [
+    { id: 'resumen',  label: 'Resumen' },
+    { id: 'barberos', label: 'Barberos' },
+    { id: 'sedes',    label: 'Sedes' },
+    { id: 'miembros', label: 'Miembros' },
+    { id: 'horario',  label: 'Horario' },
+  ];
+  return `
+  <div class="flex gap-2 overflow-x-auto pb-1 mt-4 -mx-1 px-1">
+    ${tabs.map(t => `
+      <button data-action="mgr-switch-tab" data-tab="${t.id}" class="shrink-0 rounded-full px-3.5 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors ${UI.managerTab===t.id ? 'bg-accent text-black' : 'bg-card2 card-edge text-muted'}">
+        ${t.label}
+      </button>
+    `).join('')}
+  </div>`;
+}
+
+function deleteConfirmRow(type, id) {
+  return `
+  <div class="mt-3 rounded-lg border border-ember/40 bg-ember/10 px-3 py-2.5">
+    <div class="text-[11px] text-ember font-semibold mb-2">¿Eliminar definitivamente?</div>
+    <div class="flex gap-2">
+      <button data-action="mgr-cancel-delete" class="flex-1 rounded-lg bg-card2 card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="mgr-confirm-delete" data-type="${type}" data-id="${id}" class="flex-1 rounded-lg bg-ember text-white text-[11px] font-bold uppercase tracking-wide py-2">Sí, eliminar</button>
+    </div>
+  </div>`;
+}
+
 function renderManagerPanel() {
+  return `
+  <div class="px-5 pt-6">
+    <div class="font-display text-3xl text-white leading-none">PANEL <span class="text-accent">GERENCIA</span></div>
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">La Mafia · Pereira y Dosquebradas</div>
+    ${managerTabBar()}
+    <div class="mt-5">
+      ${UI.managerTab === 'resumen'  ? renderManagerResumen()  : ''}
+      ${UI.managerTab === 'barberos' ? renderManagerBarberos() : ''}
+      ${UI.managerTab === 'sedes'    ? renderManagerSedes()    : ''}
+      ${UI.managerTab === 'miembros' ? renderManagerMiembros() : ''}
+      ${UI.managerTab === 'horario'  ? renderManagerHorario()  : ''}
+    </div>
+  </div>`;
+}
+
+/* ---- Pestaña: Resumen ---- */
+function renderManagerResumen() {
   const ingresosProyectados = DB.members.reduce((sum, m) => sum + planOf(m).price, 0);
   const planCounts = {};
   DB.members.forEach(m => { const key = m.category + '|' + m.tier; planCounts[key] = (planCounts[key] || 0) + 1; });
@@ -1389,11 +1667,7 @@ function renderManagerPanel() {
   const totalAfiliados = DB.members.length;
 
   return `
-  <div class="px-5 pt-6">
-    <div class="font-display text-3xl text-white leading-none">PANEL <span class="text-accent">GERENCIA</span></div>
-    <div class="text-[11px] uppercase tracking-[0.2em] text-muted mt-1">La Mafia · Pereira</div>
-
-    <div class="grid grid-cols-1 gap-3 mt-5">
+    <div class="grid grid-cols-1 gap-3">
       <div class="rounded-xl bg-card card-edge px-4 py-4">
         <div class="flex items-center gap-1.5 text-muted text-[10px] uppercase tracking-wide">${svgIcon('trend','w-3.5 h-3.5')} Ingresos proyectados por membresías</div>
         <div class="font-mono text-3xl font-bold text-accent mt-1">${money(ingresosProyectados)}<span class="text-sm text-muted">/mes</span></div>
@@ -1413,39 +1687,254 @@ function renderManagerPanel() {
     </div>
 
     ${renderPendingRequests()}
-
-    <div class="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted">Control de créditos por afiliado</div>
-    <div class="mt-3 space-y-2.5">
-      ${DB.members.map(m => {
-        const meta = categoryMeta(m.category);
-        const plan = planOf(m);
-        const cortesLeft = plan.cortes - m.cortesUsados;
-        return `
-        <div class="rounded-xl bg-card card-edge px-4 py-3.5">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm font-semibold text-white">${m.name}</div>
-              <div class="text-[11px] text-muted mt-0.5">${m.phone} · ${meta.icon} ${meta.label} ${plan.label}</div>
-            </div>
-            <div class="text-right">
-              <div class="font-mono text-sm font-bold ${cortesLeft <= 0 ? 'text-ember' : 'text-accent'}">${cortesLeft}/${plan.cortes}</div>
-              <div class="text-[10px] text-muted">créditos rest.</div>
-            </div>
-          </div>
-          <div class="flex gap-1.5 mt-2.5">
-            ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < m.cortesUsados ? 'filled' : 'empty'}" style="width:12px;height:12px; ${i < m.cortesUsados ? `background:${meta.color};` : ''} border-color:${meta.color};"></div>`).join('')}
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-
     ${renderRecentCancellations()}
 
     <div class="mt-6 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
       ${svgIcon('check', 'shrink-0 mt-0.5 text-okgreen')}
       <span>El sistema descuenta créditos automáticamente en cada cita, evitando cortes no registrados o pérdidas por control manual.</span>
     </div>
+  `;
+}
+
+/* ---- Pestaña: Barberos ---- */
+function renderManagerBarberos() {
+  return `
+    <div class="flex items-center justify-between">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Barberos (${DB.barbers.length})</div>
+      ${!UI.barberDraft ? `<button data-action="mgr-new-barber" class="flex items-center gap-1 text-[11px] font-bold uppercase text-accent">${svgIcon('plus','w-3.5 h-3.5')} Agregar</button>` : ''}
+    </div>
+    ${UI.barberDraft ? barberForm() : ''}
+    <div class="mt-3 space-y-2.5">
+      ${DB.barbers.map(b => barberRow(b)).join('')}
+    </div>
+  `;
+}
+
+function barberForm() {
+  const d = UI.barberDraft;
+  return `
+  <div class="mt-3 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] uppercase tracking-[0.2em] text-accent mb-2">${d.id ? 'Editar barbero' : 'Nuevo barbero'}</div>
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-[11px] text-muted">Nombre</label>
+        <input id="input-barber-name" type="text" value="${d.name}" placeholder="Ej: Camilo Vega" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Rol / especialidad</label>
+        <input id="input-barber-role" type="text" value="${d.role}" placeholder="Ej: Barbero Senior" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Comisión por corte (COP)</label>
+        <input id="input-barber-commission" type="text" inputmode="numeric" value="${d.commission}" placeholder="12000" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Sede</label>
+        <div class="flex flex-wrap gap-1.5 mt-1.5">
+          ${DB.locations.map(l => `<button data-action="mgr-barber-draft-location" data-id="${l.id}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${d.locationId===l.id ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${l.name}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-3.5">
+      <button data-action="mgr-cancel-barber-form" class="flex-1 rounded-lg bg-card card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="mgr-save-barber" class="flex-1 rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide py-2">Guardar</button>
+    </div>
   </div>`;
+}
+
+function barberRow(b) {
+  const confirmingDelete = UI.pendingDelete && UI.pendingDelete.type === 'barber' && UI.pendingDelete.id === b.id;
+  return `
+  <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent font-display text-lg shrink-0">${b.name.charAt(0)}</div>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-white text-sm truncate">${b.name}</div>
+        <div class="text-[11px] text-muted truncate">${b.role} · ${locationLabel(b.locationId)}</div>
+        <div class="text-[10px] text-muted mt-0.5">Comisión: ${money(b.commissionPerCut)}/corte${b.restDay ? ' · <span class="text-ember">Descanso hoy</span>' : ''}</div>
+      </div>
+    </div>
+    ${confirmingDelete ? deleteConfirmRow('barber', b.id) : `
+      <div class="flex gap-2 mt-3">
+        <button data-action="mgr-edit-barber" data-id="${b.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-white text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('edit','w-3.5 h-3.5')} Editar</button>
+        <button data-action="mgr-request-delete" data-type="barber" data-id="${b.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-ember text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('trash','w-3.5 h-3.5')} Eliminar</button>
+      </div>
+    `}
+  </div>`;
+}
+
+/* ---- Pestaña: Sedes ---- */
+function renderManagerSedes() {
+  return `
+    <div class="flex items-center justify-between">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Sedes (${DB.locations.length})</div>
+      ${!UI.locationDraft ? `<button data-action="mgr-new-location" class="flex items-center gap-1 text-[11px] font-bold uppercase text-accent">${svgIcon('plus','w-3.5 h-3.5')} Agregar</button>` : ''}
+    </div>
+    ${UI.locationDraft ? locationForm() : ''}
+    <div class="mt-3 space-y-2.5">
+      ${DB.locations.map(l => locationRow(l)).join('')}
+    </div>
+  `;
+}
+
+function locationForm() {
+  const d = UI.locationDraft;
+  return `
+  <div class="mt-3 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] uppercase tracking-[0.2em] text-accent mb-2">${d.id ? 'Editar sede' : 'Nueva sede'}</div>
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-[11px] text-muted">Nombre de la sede</label>
+        <input id="input-location-name" type="text" value="${d.name}" placeholder="Ej: Cuba" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Ciudad</label>
+        <input id="input-location-city" type="text" value="${d.city}" placeholder="Ej: Pereira" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Dirección</label>
+        <input id="input-location-address" type="text" value="${d.address}" placeholder="Ej: Cra 8 # 12-34" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+    </div>
+    <div class="flex gap-2 mt-3.5">
+      <button data-action="mgr-cancel-location-form" class="flex-1 rounded-lg bg-card card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="mgr-save-location" class="flex-1 rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide py-2">Guardar</button>
+    </div>
+  </div>`;
+}
+
+function locationRow(l) {
+  const confirmingDelete = UI.pendingDelete && UI.pendingDelete.type === 'location' && UI.pendingDelete.id === l.id;
+  const barberCount = DB.barbers.filter(b => b.locationId === l.id).length;
+  const memberCount = DB.members.filter(m => m.locationId === l.id).length;
+  return `
+  <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-full bg-card2 card-edge flex items-center justify-center text-accent shrink-0">${svgIcon('pin')}</div>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-white text-sm truncate">${l.name}</div>
+        <div class="text-[11px] text-muted truncate">${l.city} · ${l.address}</div>
+        <div class="text-[10px] text-muted mt-0.5">${barberCount} barberos · ${memberCount} miembros</div>
+      </div>
+    </div>
+    ${confirmingDelete ? deleteConfirmRow('location', l.id) : `
+      <div class="flex gap-2 mt-3">
+        <button data-action="mgr-edit-location" data-id="${l.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-white text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('edit','w-3.5 h-3.5')} Editar</button>
+        <button data-action="mgr-request-delete" data-type="location" data-id="${l.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-ember text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('trash','w-3.5 h-3.5')} Eliminar</button>
+      </div>
+    `}
+  </div>`;
+}
+
+/* ---- Pestaña: Miembros ---- */
+function renderManagerMiembros() {
+  return `
+    <div class="flex items-center justify-between">
+      <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Miembros (${DB.members.length})</div>
+      ${!UI.memberDraft ? `<button data-action="mgr-new-member" class="flex items-center gap-1 text-[11px] font-bold uppercase text-accent">${svgIcon('plus','w-3.5 h-3.5')} Agregar</button>` : ''}
+    </div>
+    ${UI.memberDraft ? memberForm() : ''}
+    <div class="mt-3 space-y-2.5">
+      ${DB.members.map(m => memberRow(m)).join('')}
+    </div>
+  `;
+}
+
+function memberForm() {
+  const d = UI.memberDraft;
+  const tiers = Object.keys(PLANS[d.category]);
+  return `
+  <div class="mt-3 rounded-xl bg-card2 card-edge px-4 py-3.5">
+    <div class="text-[11px] uppercase tracking-[0.2em] text-accent mb-2">${d.id ? 'Editar miembro' : 'Nuevo miembro'}</div>
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-[11px] text-muted">Nombre</label>
+        <input id="input-member-name" type="text" value="${d.name}" placeholder="Ej: Laura Díaz" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Celular</label>
+        <input id="input-member-phone" type="tel" value="${d.phone}" placeholder="300 000 0000" class="w-full rounded-lg px-3 py-2.5 mt-1 text-xs" />
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Categoría</label>
+        <div class="flex gap-1.5 mt-1.5">
+          ${Object.keys(CATEGORY_META).map(cat => `<button data-action="mgr-member-draft-category" data-id="${cat}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${d.category===cat ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${categoryMeta(cat).icon} ${categoryMeta(cat).label}</button>`).join('')}
+        </div>
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Plan</label>
+        <div class="flex gap-1.5 mt-1.5">
+          ${tiers.map(t => `<button data-action="mgr-member-draft-tier" data-id="${t}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${d.tier===t ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${PLANS[d.category][t].label}</button>`).join('')}
+        </div>
+      </div>
+      <div>
+        <label class="text-[11px] text-muted">Sede</label>
+        <div class="flex flex-wrap gap-1.5 mt-1.5">
+          ${DB.locations.map(l => `<button data-action="mgr-member-draft-location" data-id="${l.id}" class="text-[10px] font-semibold rounded-full px-2.5 py-1.5 border transition-colors ${d.locationId===l.id ? 'bg-accent text-black border-accent' : 'bg-card text-muted border-edge hover:border-accent/60'}">${l.name}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-3.5">
+      <button data-action="mgr-cancel-member-form" class="flex-1 rounded-lg bg-card card-edge text-muted text-[11px] font-bold uppercase tracking-wide py-2">Cancelar</button>
+      <button data-action="mgr-save-member" class="flex-1 rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide py-2">Guardar</button>
+    </div>
+  </div>`;
+}
+
+function memberRow(m) {
+  const meta = categoryMeta(m.category);
+  const plan = planOf(m);
+  const cortesLeft = plan.cortes - m.cortesUsados;
+  const confirmingDelete = UI.pendingDelete && UI.pendingDelete.type === 'member' && UI.pendingDelete.id === m.id;
+  return `
+  <div class="rounded-xl bg-card card-edge px-4 py-3.5">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-sm font-semibold text-white">${m.name}</div>
+        <div class="text-[11px] text-muted mt-0.5">${m.phone} · ${meta.icon} ${meta.label} ${plan.label} · ${locationLabel(m.locationId)}</div>
+      </div>
+      <div class="text-right shrink-0 ml-2">
+        <div class="font-mono text-sm font-bold ${cortesLeft <= 0 ? 'text-ember' : 'text-accent'}">${cortesLeft}/${plan.cortes}</div>
+        <div class="text-[10px] text-muted">créditos rest.</div>
+      </div>
+    </div>
+    <div class="flex gap-1.5 mt-2.5">
+      ${Array.from({length: plan.cortes}).map((_,i) => `<div class="punch-dot ${i < m.cortesUsados ? 'filled' : 'empty'}" style="width:12px;height:12px; ${i < m.cortesUsados ? `background:${meta.color};` : ''} border-color:${meta.color};"></div>`).join('')}
+    </div>
+    ${confirmingDelete ? deleteConfirmRow('member', m.id) : `
+      <div class="flex gap-2 mt-3">
+        <button data-action="mgr-edit-member" data-id="${m.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-white text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('edit','w-3.5 h-3.5')} Editar</button>
+        <button data-action="mgr-request-delete" data-type="member" data-id="${m.id}" class="flex-1 flex items-center justify-center gap-1 rounded-lg bg-card2 card-edge text-ember text-[11px] font-bold uppercase tracking-wide py-2">${svgIcon('trash','w-3.5 h-3.5')} Eliminar</button>
+      </div>
+    `}
+  </div>`;
+}
+
+/* ---- Pestaña: Horario ---- */
+function renderManagerHorario() {
+  return `
+    <div class="text-[11px] uppercase tracking-[0.2em] text-muted">Franjas de atención pública (${DB.timeSlots.length})</div>
+    <div class="flex flex-wrap gap-2 mt-3">
+      ${DB.timeSlots.map(t => `
+        <div class="flex items-center gap-1.5 rounded-full border border-edge bg-card px-3 py-1.5 text-xs font-semibold text-white">
+          ${t}
+          <button data-action="mgr-remove-timeslot" data-time="${t}" class="text-muted hover:text-ember">${svgIcon('close','w-3 h-3')}</button>
+        </div>
+      `).join('')}
+    </div>
+    <div class="mt-4 rounded-xl bg-card2 card-edge px-4 py-3.5">
+      <label class="text-[11px] text-muted">Agregar nueva franja</label>
+      <div class="flex gap-2 mt-1.5">
+        <input id="input-new-timeslot" type="text" value="${UI.newTimeSlotValue}" placeholder="Ej: 6:00 PM" class="flex-1 rounded-lg px-3 py-2.5 text-xs" />
+        <button data-action="mgr-add-timeslot" class="rounded-lg bg-accent text-black text-[11px] font-bold uppercase tracking-wide px-4">Agregar</button>
+      </div>
+      <div class="text-[10px] text-muted mt-2">Formato: hora en punto o media, con AM/PM. Ej: 8:00 AM, 6:30 PM.</div>
+    </div>
+    <div class="mt-4 rounded-xl border border-edge bg-card2/60 px-4 py-3 text-[11px] text-muted flex items-start gap-2">
+      ${svgIcon('star', 'shrink-0 mt-0.5 text-accent')}
+      <span>Los cupos preferentes de miembros (⭐) son adicionales a esta grilla y no se editan aquí.</span>
+    </div>
+  `;
 }
 
 /* ============================ EVENT HANDLING ============================ */
@@ -1466,7 +1955,7 @@ document.addEventListener('click', (e) => {
     case 'go-client-home':
       UI.clientMode = 'home';
       UI.newStep = 1;
-      UI.newSel = { service: null, barberId: null, date: null, time: null, name: '', phone: '' };
+      UI.newSel = { locationId: null, service: null, barberId: null, date: null, time: null, name: '', phone: '' };
       UI.memberId = null;
       UI.memberStep = 1;
       UI.memberSel = { barberId: null, date: null, time: null };
@@ -1489,9 +1978,15 @@ document.addEventListener('click', (e) => {
       render();
       break;
 
+    case 'pick-location':
+      UI.newSel.locationId = target.dataset.id;
+      UI.newStep = 2;
+      render();
+      break;
+
     case 'pick-service':
       UI.newSel.service = target.dataset.id;
-      UI.newStep = 2;
+      UI.newStep = 3;
       render();
       break;
 
@@ -1501,7 +1996,7 @@ document.addEventListener('click', (e) => {
       UI[key].date = null;
       UI[key].time = null;
       UI[key].reserved = false;
-      if (key === 'newSel') UI.newStep = 3;
+      if (key === 'newSel') UI.newStep = 4;
       if (key === 'memberSel') UI.memberStep = 2;
       render();
       break;
@@ -1524,8 +2019,8 @@ document.addEventListener('click', (e) => {
       break;
     }
 
-    case 'to-step-4':
-      UI.newStep = 4;
+    case 'to-step-5':
+      UI.newStep = 5;
       render();
       break;
 
@@ -1545,6 +2040,7 @@ document.addEventListener('click', (e) => {
           clientName: UI.newSel.name || 'Cliente',
           type: 'nuevo',
           serviceName: svc ? svc.name : '',
+          locationId: UI.newSel.locationId,
           barberId: UI.newSel.barberId,
           date: UI.newSel.date,
           time: UI.newSel.time,
@@ -1580,6 +2076,7 @@ document.addEventListener('click', (e) => {
           memberId: member.id,
           reserved: UI.memberSel.reserved,
           serviceName: 'Corte (Plan ' + categoryMeta(member.category).label + ' ' + plan.label + ')',
+          locationId: member.locationId,
           barberId: UI.memberSel.barberId,
           date: UI.memberSel.date,
           time: UI.memberSel.time,
@@ -1620,6 +2117,43 @@ document.addEventListener('click', (e) => {
       if (idx >= 0) b.blockedSlots[date].splice(idx, 1);
       else b.blockedSlots[date].push(time);
       saveDB(DB);
+      render();
+      break;
+    }
+
+    case 'start-walkin':
+      UI.walkInDraft = { time: target.dataset.time, service: null, name: '' };
+      render();
+      break;
+
+    case 'pick-walkin-service':
+      UI.walkInDraft.service = target.dataset.id;
+      render();
+      break;
+
+    case 'cancel-walkin':
+      UI.walkInDraft = { time: null, service: null, name: '' };
+      render();
+      break;
+
+    case 'confirm-walkin': {
+      const nameEl = document.getElementById('input-walkin-name');
+      const svc = SERVICES.find(s => s.id === UI.walkInDraft.service);
+      const appt = {
+        id: DB.nextApptId++,
+        clientName: (nameEl && nameEl.value.trim()) || 'Cliente presencial',
+        type: 'nuevo',
+        walkIn: true,
+        serviceName: svc ? svc.name : '',
+        barberId: target.dataset.barberId,
+        date: target.dataset.date,
+        time: UI.walkInDraft.time,
+        status: 'confirmada',
+      };
+      DB.appointments.push(appt);
+      saveDB(DB);
+      showToast('Cliente presencial agendado a las ' + appt.time + '.', 'ok');
+      UI.walkInDraft = { time: null, service: null, name: '' };
       render();
       break;
     }
@@ -1680,7 +2214,7 @@ document.addEventListener('click', (e) => {
     case 'retry-new-client':
       UI.lastConfirmedCode = null;
       UI.lastConfirmedApptId = null;
-      UI.newStep = 3;
+      UI.newStep = 4;
       UI.newSel.date = null;
       UI.newSel.time = null;
       render();
@@ -1693,6 +2227,236 @@ document.addEventListener('click', (e) => {
       UI.memberSel = { barberId: null, date: null, time: null, reserved: false };
       render();
       break;
+
+    /* ---- Gerencia: navegación de pestañas ---- */
+    case 'mgr-switch-tab':
+      UI.managerTab = target.dataset.tab;
+      UI.barberDraft = null;
+      UI.locationDraft = null;
+      UI.memberDraft = null;
+      UI.pendingDelete = null;
+      render();
+      break;
+
+    /* ---- Gerencia: Barberos ---- */
+    case 'mgr-new-barber':
+      UI.barberDraft = { id: null, name: '', role: '', commission: 10000, locationId: (DB.locations[0] || {}).id || null };
+      render();
+      break;
+
+    case 'mgr-edit-barber': {
+      const b = DB.barbers.find(x => x.id === target.dataset.id);
+      if (b) UI.barberDraft = { id: b.id, name: b.name, role: b.role, commission: b.commissionPerCut, locationId: b.locationId };
+      render();
+      break;
+    }
+
+    case 'mgr-cancel-barber-form':
+      UI.barberDraft = null;
+      render();
+      break;
+
+    case 'mgr-barber-draft-location':
+      UI.barberDraft.locationId = target.dataset.id;
+      render();
+      break;
+
+    case 'mgr-save-barber': {
+      const nameEl = document.getElementById('input-barber-name');
+      const roleEl = document.getElementById('input-barber-role');
+      const commEl = document.getElementById('input-barber-commission');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const role = roleEl ? roleEl.value.trim() : '';
+      const commission = commEl ? parseInt(commEl.value.replace(/[^0-9]/g, ''), 10) || 0 : 0;
+      if (!name) { nameEl.focus(); return; }
+      if (!UI.barberDraft.locationId) { showToast('Elige una sede para el barbero.', 'warn'); return; }
+      if (UI.barberDraft.id) {
+        const b = DB.barbers.find(x => x.id === UI.barberDraft.id);
+        b.name = name; b.role = role; b.commissionPerCut = commission; b.locationId = UI.barberDraft.locationId;
+      } else {
+        DB.barbers.push({
+          id: 'barbero_' + DB.nextBarberId++,
+          name, role, commissionPerCut: commission, locationId: UI.barberDraft.locationId,
+          restDay: false, blockedSlots: {},
+        });
+      }
+      saveDB(DB);
+      UI.barberDraft = null;
+      showToast('Barbero guardado.', 'ok');
+      render();
+      break;
+    }
+
+    /* ---- Gerencia: Sedes ---- */
+    case 'mgr-new-location':
+      UI.locationDraft = { id: null, name: '', city: '', address: '' };
+      render();
+      break;
+
+    case 'mgr-edit-location': {
+      const l = locationById(target.dataset.id);
+      if (l) UI.locationDraft = { id: l.id, name: l.name, city: l.city, address: l.address };
+      render();
+      break;
+    }
+
+    case 'mgr-cancel-location-form':
+      UI.locationDraft = null;
+      render();
+      break;
+
+    case 'mgr-save-location': {
+      const nameEl = document.getElementById('input-location-name');
+      const cityEl = document.getElementById('input-location-city');
+      const addrEl = document.getElementById('input-location-address');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const city = cityEl ? cityEl.value.trim() : '';
+      const address = addrEl ? addrEl.value.trim() : '';
+      if (!name) { nameEl.focus(); return; }
+      if (!city) { cityEl.focus(); return; }
+      if (UI.locationDraft.id) {
+        const l = locationById(UI.locationDraft.id);
+        l.name = name; l.city = city; l.address = address;
+      } else {
+        DB.locations.push({ id: 'sede_' + DB.nextLocationId++, name, city, address });
+      }
+      saveDB(DB);
+      UI.locationDraft = null;
+      showToast('Sede guardada.', 'ok');
+      render();
+      break;
+    }
+
+    /* ---- Gerencia: Miembros ---- */
+    case 'mgr-new-member':
+      UI.memberDraft = { id: null, name: '', phone: '', category: 'estandar', tier: 'base', locationId: (DB.locations[0] || {}).id || null };
+      render();
+      break;
+
+    case 'mgr-edit-member': {
+      const m = DB.members.find(x => x.id === target.dataset.id);
+      if (m) UI.memberDraft = { id: m.id, name: m.name, phone: m.phone, category: m.category, tier: m.tier, locationId: m.locationId };
+      render();
+      break;
+    }
+
+    case 'mgr-cancel-member-form':
+      UI.memberDraft = null;
+      render();
+      break;
+
+    case 'mgr-member-draft-category':
+      UI.memberDraft.category = target.dataset.id;
+      UI.memberDraft.tier = Object.keys(PLANS[UI.memberDraft.category])[0];
+      render();
+      break;
+
+    case 'mgr-member-draft-tier':
+      UI.memberDraft.tier = target.dataset.id;
+      render();
+      break;
+
+    case 'mgr-member-draft-location':
+      UI.memberDraft.locationId = target.dataset.id;
+      render();
+      break;
+
+    case 'mgr-save-member': {
+      const nameEl = document.getElementById('input-member-name');
+      const phoneEl = document.getElementById('input-member-phone');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const phone = phoneEl ? phoneEl.value.trim() : '';
+      if (!name) { nameEl.focus(); return; }
+      if (!UI.memberDraft.locationId) { showToast('Elige una sede para el miembro.', 'warn'); return; }
+      if (UI.memberDraft.id) {
+        const m = DB.members.find(x => x.id === UI.memberDraft.id);
+        m.name = name; m.phone = phone; m.category = UI.memberDraft.category; m.tier = UI.memberDraft.tier; m.locationId = UI.memberDraft.locationId;
+      } else {
+        DB.members.push({
+          id: 'miembro_' + DB.nextMemberId++,
+          name, phone, category: UI.memberDraft.category, tier: UI.memberDraft.tier, locationId: UI.memberDraft.locationId,
+          cortesUsados: 0, extrasUsados: 0,
+        });
+      }
+      saveDB(DB);
+      UI.memberDraft = null;
+      showToast('Miembro guardado.', 'ok');
+      render();
+      break;
+    }
+
+    /* ---- Gerencia: Horario de atención ---- */
+    case 'mgr-add-timeslot': {
+      const input = document.getElementById('input-new-timeslot');
+      const raw = input ? input.value.trim() : '';
+      const valid = /^([1-9]|1[0-2]):(00|30)\s?(AM|PM)$/i.test(raw);
+      if (!valid) { showToast('Formato inválido. Usa algo como 6:00 PM o 6:30 AM.', 'warn'); return; }
+      const normalized = raw.toUpperCase().replace(/\s+/g, ' ').replace(/(\d)(AM|PM)/, '$1 $2');
+      if (DB.timeSlots.includes(normalized)) { showToast('Esa franja ya existe.', 'warn'); return; }
+      DB.timeSlots.push(normalized);
+      DB.timeSlots.sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+      saveDB(DB);
+      UI.newTimeSlotValue = '';
+      showToast('Franja agregada.', 'ok');
+      render();
+      break;
+    }
+
+    case 'mgr-remove-timeslot': {
+      const time = target.dataset.time;
+      DB.timeSlots = DB.timeSlots.filter(t => t !== time);
+      saveDB(DB);
+      showToast('Franja eliminada.', 'ok');
+      render();
+      break;
+    }
+
+    /* ---- Gerencia: borrado con confirmación (barberos, sedes, miembros) ---- */
+    case 'mgr-request-delete':
+      UI.pendingDelete = { type: target.dataset.type, id: target.dataset.id };
+      render();
+      break;
+
+    case 'mgr-cancel-delete':
+      UI.pendingDelete = null;
+      render();
+      break;
+
+    case 'mgr-confirm-delete': {
+      const del = UI.pendingDelete || {};
+      if (del.type === 'barber') {
+        const hasActive = DB.appointments.some(a => a.barberId === del.id && (a.status === 'pendiente' || a.status === 'confirmada'));
+        if (hasActive) {
+          showToast('No se puede eliminar: tiene citas activas pendientes o confirmadas.', 'warn');
+        } else {
+          DB.barbers = DB.barbers.filter(b => b.id !== del.id);
+          if (UI.selectedBarberId === del.id) UI.selectedBarberId = (DB.barbers[0] || {}).id || null;
+          saveDB(DB);
+          showToast('Barbero eliminado.', 'ok');
+        }
+      } else if (del.type === 'location') {
+        const inUse = DB.barbers.some(b => b.locationId === del.id) || DB.members.some(m => m.locationId === del.id);
+        if (inUse) {
+          showToast('No se puede eliminar: hay barberos o miembros asignados a esta sede.', 'warn');
+        } else {
+          DB.locations = DB.locations.filter(l => l.id !== del.id);
+          saveDB(DB);
+          showToast('Sede eliminada.', 'ok');
+        }
+      } else if (del.type === 'member') {
+        const hasActive = DB.appointments.some(a => a.memberId === del.id && (a.status === 'pendiente' || a.status === 'confirmada'));
+        if (hasActive) {
+          showToast('No se puede eliminar: el miembro tiene una cita activa.', 'warn');
+        } else {
+          DB.members = DB.members.filter(m => m.id !== del.id);
+          saveDB(DB);
+          showToast('Miembro eliminado.', 'ok');
+        }
+      }
+      UI.pendingDelete = null;
+      render();
+      break;
+    }
   }
 });
 

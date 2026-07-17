@@ -1,20 +1,31 @@
 {
-  "name": "La Mafia Barbershop",
+  "name": "La Mafia Barbería",
   "short_name": "La Mafia",
+  "description": "Agenda tu corte en La Mafia Barbería — Pereira y Dosquebradas.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#14161a",
+  "orientation": "portrait",
+  "background_color": "#0b0c10",
   "theme_color": "#ff6a00",
   "icons": [
     {
-      "src": "favicon.png",
+      "src": "assets/images/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "favicon.png",
+      "src": "assets/images/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/images/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
